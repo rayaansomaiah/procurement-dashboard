@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Package } from 'lucide-react'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -9,6 +9,7 @@ import UploadZone from '../upload/UploadZone'
 export default function Sidebar() {
   const { params, setParams, uploadedFile, setUploadedFile, setAnalyzeResult } = useAppStore()
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [machinesInput, setMachinesInput] = useState(String(params.numMachines))
 
   const mutation = useMutation({
     mutationFn: ({ file, p }: { file: File; p: typeof params }) => runAnalysis(file, p),
@@ -63,14 +64,18 @@ export default function Sidebar() {
           <input
             type="number"
             min={1}
-            value={params.numMachines}
+            value={machinesInput}
             onChange={(e) => {
+              setMachinesInput(e.target.value)
               const v = parseInt(e.target.value)
               if (!isNaN(v) && v >= 1) setParams({ numMachines: v })
             }}
-            onBlur={(e) => {
-              const v = parseInt(e.target.value)
-              if (isNaN(v) || v < 1) setParams({ numMachines: 1 })
+            onBlur={() => {
+              const v = parseInt(machinesInput)
+              if (isNaN(v) || v < 1) {
+                setMachinesInput('1')
+                setParams({ numMachines: 1 })
+              }
             }}
             className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
           />
