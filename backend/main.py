@@ -1,6 +1,7 @@
 import io
 import json
 import math
+import os
 from datetime import date
 from pathlib import Path
 
@@ -177,7 +178,8 @@ async def export(
     )
 
 
-# Serve built React app in production
-dist_path = Path(__file__).parent.parent / "frontend" / "dist"
-if dist_path.exists():
-    app.mount("/", StaticFiles(directory=str(dist_path), html=True), name="static")
+# Serve built React app only in production (set PRODUCTION=true on Render)
+if os.getenv("PRODUCTION") == "true":
+    dist_path = Path(__file__).parent.parent / "frontend" / "dist"
+    if dist_path.exists():
+        app.mount("/", StaticFiles(directory=str(dist_path), html=True), name="static")
