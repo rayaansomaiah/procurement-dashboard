@@ -64,7 +64,14 @@ export default function Sidebar() {
             type="number"
             min={1}
             value={params.numMachines}
-            onChange={(e) => setParams({ numMachines: Math.max(1, Number(e.target.value)) })}
+            onChange={(e) => {
+              const v = parseInt(e.target.value)
+              if (!isNaN(v) && v >= 1) setParams({ numMachines: v })
+            }}
+            onBlur={(e) => {
+              const v = parseInt(e.target.value)
+              if (isNaN(v) || v < 1) setParams({ numMachines: 1 })
+            }}
             className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
           />
         </div>

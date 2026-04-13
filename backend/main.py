@@ -122,8 +122,9 @@ async def analyze(
     present = result_df["urgency"].dropna().unique().tolist()
     urgency_levels = [u for u in urgency_order if u in present]
 
-    categories = sorted(result_df["category"].dropna().unique().tolist())
-    vendors = sorted(result_df["recommended_vendor"].dropna().unique().tolist())
+    categories = sorted(set(result_df["category"].dropna().str.strip().tolist()))
+    categories = [c for c in categories if c]
+    vendors = sorted(set(result_df["recommended_vendor"].dropna().str.strip().tolist()))
     vendors = [v for v in vendors if v]
 
     return AnalyzeResponse(
