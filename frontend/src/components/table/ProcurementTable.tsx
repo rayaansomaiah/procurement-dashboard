@@ -40,7 +40,10 @@ const commonCols = [
   col.accessor('description', { header: 'Description' }),
   col.accessor('category', { header: 'Category' }),
   col.accessor('current_stock', { header: 'Current Stock' }),
-  col.accessor('stock_cover_days', { header: 'Stock Cover (Days)' }),
+  col.accessor('stock_cover_days', {
+    header: 'Stock Cover (Days)',
+    cell: (i) => i.getValue() >= 999 ? '—' : i.getValue(),
+  }),
   col.accessor('recommended_vendor', { header: 'Vendor' }),
   col.accessor('recommended_lead_days', { header: 'Lead (Days)' }),
   col.accessor('recommended_unit_price', {
@@ -66,7 +69,10 @@ const sideBySideCols = [
   col.accessor('description', { header: 'Description' }),
   col.accessor('category', { header: 'Category' }),
   col.accessor('current_stock', { header: 'Current Stock' }),
-  col.accessor('stock_cover_days', { header: 'Stock Cover' }),
+  col.accessor('stock_cover_days', {
+    header: 'Stock Cover',
+    cell: (i) => i.getValue() >= 999 ? '—' : i.getValue(),
+  }),
   col.accessor('recommended_vendor', { header: 'Vendor' }),
   col.accessor('recommended_lead_days', { header: 'Lead (Days)' }),
   col.accessor('recommended_unit_price', {
