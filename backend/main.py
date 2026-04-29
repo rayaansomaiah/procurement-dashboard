@@ -46,14 +46,24 @@ def _run_pipeline(
         m1 = int(row.get("machines_override", machines_m1) or machines_m1)
         r = compute_demand(row_df, m1, 30, safety_buffer_pct, vendor_strategy)
 
-        # Period 2: new machines onboarding at day 30
-        p2 = compute_period_demand(row_df, machines_m2, 30, safety_buffer_pct, vendor_strategy)
+        # Remaining stock after M1 machines consume for 30 days
+        current  = float(row.get("current_stock", 0) or 0)
+        incoming = float(row.get("incoming_stock", 0) or 0)
+        m1_demand = float(r["horizon_demand"].iloc[0])
+        remaining_after_m1 = max(0.0, current + incoming - m1_demand)
+
+        # Period 2: new machines onboarding at day 30 — offset by leftover stock from M1
+        p2 = compute_period_demand(row_df, machines_m2, 30, safety_buffer_pct, vendor_strategy, remaining_stock=remaining_after_m1)
         r["order_qty_m2"] = int(p2["order_qty_period"].iloc[0])
         r["order_by_m2"]  = str(p2["order_by_period"].iloc[0])
         r["est_cost_m2"]  = float(p2["est_cost_period"].iloc[0])
 
-        # Period 3: new machines onboarding at day 60
-        p3 = compute_period_demand(row_df, machines_m3, 60, safety_buffer_pct, vendor_strategy)
+        # Remaining stock after M2 machines consume for 30 days
+        m2_demand = machines_m2 * float(row.get("consumption_per_month", 0))
+        remaining_after_m2 = max(0.0, remaining_after_m1 - m2_demand)
+
+        # Period 3: new machines onboarding at day 60 — offset by leftover stock from M2
+        p3 = compute_period_demand(row_df, machines_m3, 60, safety_buffer_pct, vendor_strategy, remaining_stock=remaining_after_m2)
         r["order_qty_m3"] = int(p3["order_qty_period"].iloc[0])
         r["order_by_m3"]  = str(p3["order_by_period"].iloc[0])
         r["est_cost_m3"]  = float(p3["est_cost_period"].iloc[0])

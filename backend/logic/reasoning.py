@@ -86,10 +86,17 @@ def build_reason_period(row, period: int) -> str:
         f"at a rate of {consumption:.1f} units/machine/month."
     )
 
-    lines.append(
-        f"These machines have no existing stock — {int(order_qty)} units need to be procured fresh "
-        f"to cover their first 30 days of operation plus a safety buffer."
-    )
+    leftover = row.get("remaining_stock_used", 0)
+    if leftover and leftover > 0:
+        lines.append(
+            f"After M1 machines consume their share, approximately {int(leftover)} units of existing stock "
+            f"remain and will be used for these machines. The remaining {int(order_qty)} units still need to be procured."
+        )
+    else:
+        lines.append(
+            f"No existing stock is available for these machines — {int(order_qty)} units need to be procured fresh "
+            f"to cover their first 30 days of operation plus a safety buffer."
+        )
 
     days_to_order = max(0, onboard_day - lead_days)
     if days_to_order == 0:

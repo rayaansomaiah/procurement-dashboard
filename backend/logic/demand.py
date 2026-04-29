@@ -129,6 +129,7 @@ def compute_period_demand(
     onboard_day: int,
     safety_buffer_pct: float,
     vendor_strategy: str = "Prefer L1",
+    remaining_stock: float = 0.0,
 ) -> pd.DataFrame:
     """
     Periods 2 & 3 — new machines onboarding at `onboard_day` (30 or 60).
@@ -156,7 +157,7 @@ def compute_period_demand(
     monthly = df["consumption_per_month"] * machines
     safety  = monthly * (df["recommended_lead_days"] / 30.0) * (safety_buffer_pct / 100.0)
 
-    df["net_required"] = monthly + safety  # no existing stock for new machines
+    df["net_required"] = monthly + safety - remaining_stock  # use leftover stock from previous period
 
     moq       = df.get("moq",       pd.Series(1, index=df.index)).fillna(1).astype(float)
     pack_size = df.get("pack_size", pd.Series(1, index=df.index)).fillna(1).astype(float)
