@@ -3,8 +3,9 @@ import type { AnalysisParams, AnalyzeResponse, FilterState } from '../types/proc
 function buildForm(file: File, params: AnalysisParams): FormData {
   const form = new FormData()
   form.append('file', file)
-  form.append('num_machines', String(params.numMachines))
-  form.append('horizon_days', String(params.horizonDays))
+  form.append('machines_m1', String(params.machinesM1))
+  form.append('machines_m2', String(params.machinesM2))
+  form.append('machines_m3', String(params.machinesM3))
   form.append('safety_buffer_pct', String(params.safetyBufferPct))
   form.append('vendor_strategy', params.vendorStrategy)
   return form

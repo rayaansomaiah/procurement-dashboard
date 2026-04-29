@@ -3,7 +3,9 @@ export interface KpiSummary {
   critical: number
   high: number
   action_needed: number
-  est_total_spend: number
+  est_total_spend_m1: number
+  est_total_spend_m2: number
+  est_total_spend_m3: number
 }
 
 export interface ProcurementRow {
@@ -13,12 +15,22 @@ export interface ProcurementRow {
   monthly_demand: number
   current_stock: number
   stock_cover_days: number
+  // Period 1 — machines onboarded now
   recommended_order_qty: number
+  order_by_date: string
+  estimated_cost: number
+  // Period 2 — machines onboarding at day 30
+  order_qty_m2: number
+  order_by_m2: string
+  est_cost_m2: number
+  // Period 3 — machines onboarding at day 60
+  order_qty_m3: number
+  order_by_m3: string
+  est_cost_m3: number
+  // Common
   recommended_vendor: string
   recommended_lead_days: number
   recommended_unit_price: number
-  estimated_cost: number
-  order_by_date: string
   urgency: string
   flags: string
   reason: string
@@ -38,8 +50,9 @@ export interface AnalyzeResponse {
 }
 
 export interface AnalysisParams {
-  numMachines: number
-  horizonDays: 30 | 60 | 90
+  machinesM1: number
+  machinesM2: number
+  machinesM3: number
   safetyBufferPct: number
   vendorStrategy: 'Prefer L1' | 'Fastest Delivery' | 'Cheapest Price'
 }

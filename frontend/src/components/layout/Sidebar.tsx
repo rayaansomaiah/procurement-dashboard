@@ -6,18 +6,59 @@ import { useAppStore } from '../../store/useAppStore'
 import { runAnalysis } from '../../api/client'
 import UploadZone from '../upload/UploadZone'
 
+function MachineInput({
+  label,
+  sublabel,
+  value,
+  onChange,
+}: {
+  label: string
+  sublabel: string
+  value: number
+  onChange: (v: number) => void
+}) {
+  const [raw, setRaw] = useState(value === 0 ? '' : String(value))
+
+  useEffect(() => {
+    setRaw(value === 0 ? '' : String(value))
+  }, [value])
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      <label className="text-xs text-gray-300">{label}</label>
+      <span className="text-[10px] text-gray-500">{sublabel}</span>
+      <input
+        type="number"
+        min={0}
+        placeholder="0"
+        value={raw}
+        onChange={(e) => {
+          setRaw(e.target.value)
+          const v = parseInt(e.target.value)
+          if (!isNaN(v) && v >= 0) onChange(v)
+        }}
+        onBlur={() => {
+          const v = parseInt(raw)
+          if (isNaN(v) || v < 0) {
+            setRaw('')
+            onChange(0)
+          }
+        }}
+        className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
+      />
+    </div>
+  )
+}
+
 export default function Sidebar() {
   const { params, setParams, uploadedFile, setUploadedFile, setAnalyzeResult } = useAppStore()
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [machinesInput, setMachinesInput] = useState(String(params.numMachines))
 
   const mutation = useMutation({
     mutationFn: ({ file, p }: { file: File; p: typeof params }) => runAnalysis(file, p),
     onSuccess: (data) => {
       setAnalyzeResult(data)
-      if (data.warnings.length > 0) {
-        data.warnings.forEach((w) => toast.warning(w))
-      }
+      if (data.warnings.length > 0) data.warnings.forEach((w) => toast.warning(w))
     },
     onError: (err: Error) => toast.error(err.message),
   })
@@ -55,44 +96,33 @@ export default function Sidebar() {
         )}
       </section>
 
-      {/* Controls */}
+      {/* Machine Onboarding */}
+      <section className="flex flex-col gap-3">
+        <label className="text-xs text-gray-400 uppercase tracking-widest block">Machines Onboarded</label>
+
+        <MachineInput
+          label="Month 1 (Now)"
+          sublabel="Onboarding today"
+          value={params.machinesM1}
+          onChange={(v) => setParams({ machinesM1: v })}
+        />
+        <MachineInput
+          label="Month 2 (Day 30)"
+          sublabel="Onboarding at day 30"
+          value={params.machinesM2}
+          onChange={(v) => setParams({ machinesM2: v })}
+        />
+        <MachineInput
+          label="Month 3 (Day 60)"
+          sublabel="Onboarding at day 60"
+          value={params.machinesM3}
+          onChange={(v) => setParams({ machinesM3: v })}
+        />
+      </section>
+
+      {/* Other Settings */}
       <section className="flex flex-col gap-4">
-        <label className="text-xs text-gray-400 uppercase tracking-widest mb-0 block">Configuration</label>
-
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-gray-300">Machines Onboarded</label>
-          <input
-            type="number"
-            min={1}
-            value={machinesInput}
-            onChange={(e) => {
-              setMachinesInput(e.target.value)
-              const v = parseInt(e.target.value)
-              if (!isNaN(v) && v >= 1) setParams({ numMachines: v })
-            }}
-            onBlur={() => {
-              const v = parseInt(machinesInput)
-              if (isNaN(v) || v < 1) {
-                setMachinesInput('1')
-                setParams({ numMachines: 1 })
-              }
-            }}
-            className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
-          />
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-gray-300">Planning Horizon</label>
-          <select
-            value={params.horizonDays}
-            onChange={(e) => setParams({ horizonDays: Number(e.target.value) as 30 | 60 | 90 })}
-            className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
-          >
-            <option value={30}>30 days</option>
-            <option value={60}>60 days</option>
-            <option value={90}>90 days</option>
-          </select>
-        </div>
+        <label className="text-xs text-gray-400 uppercase tracking-widest block">Settings</label>
 
         <div className="flex flex-col gap-1">
           <label className="text-xs text-gray-300">
@@ -126,7 +156,6 @@ export default function Sidebar() {
         </div>
       </section>
 
-      {/* Date */}
       <div className="mt-auto text-xs text-gray-600">
         {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
       </div>

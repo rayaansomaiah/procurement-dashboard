@@ -2,31 +2,27 @@ import { create } from 'zustand'
 import type { AnalysisParams, AnalyzeResponse, FilterState } from '../types/procurement'
 
 interface AppStore {
-  // Sidebar params
   params: AnalysisParams
   setParams: (p: Partial<AnalysisParams>) => void
 
-  // File
   uploadedFile: File | null
   setUploadedFile: (f: File) => void
 
-  // Result
   analyzeResult: AnalyzeResponse | null
   setAnalyzeResult: (r: AnalyzeResponse) => void
 
-  // Filters
   filters: FilterState
   setFilter: (f: Partial<FilterState>) => void
 
-  // Tab
   activeTab: 'table' | 'alerts' | 'export'
   setActiveTab: (t: 'table' | 'alerts' | 'export') => void
 }
 
 export const useAppStore = create<AppStore>((set) => ({
   params: {
-    numMachines: 1,
-    horizonDays: 30,
+    machinesM1: 0,
+    machinesM2: 0,
+    machinesM3: 0,
     safetyBufferPct: 20,
     vendorStrategy: 'Prefer L1',
   },
