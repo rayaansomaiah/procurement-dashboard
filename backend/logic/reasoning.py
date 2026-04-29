@@ -86,15 +86,15 @@ def build_reason_period(row, period: int) -> str:
         f"at a rate of {consumption:.1f} units/machine/month."
     )
 
-    leftover = row.get("remaining_stock_used", 0)
-    if leftover and leftover > 0:
+    leftover = float(row.get(f"remaining_stock_m{period}", 0) or 0)
+    if leftover > 0:
         lines.append(
-            f"After M1 machines consume their share, approximately {int(leftover)} units of existing stock "
-            f"remain and will be used for these machines. The remaining {int(order_qty)} units still need to be procured."
+            f"After earlier machines consume their share, {int(leftover)} units of existing stock "
+            f"remain and will be used for this batch. The remaining {int(order_qty)} units still need to be freshly procured."
         )
     else:
         lines.append(
-            f"No existing stock is available for these machines — {int(order_qty)} units need to be procured fresh "
+            f"No existing stock is available for this batch — {int(order_qty)} units need to be procured fresh "
             f"to cover their first 30 days of operation plus a safety buffer."
         )
 
