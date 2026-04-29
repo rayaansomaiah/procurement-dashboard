@@ -115,6 +115,8 @@ def _df_to_rows(df: pd.DataFrame):
             urgency=_safe_str(r.get("urgency", "")),
             flags=_safe_str(r.get("flags", "—")),
             reason=_safe_str(r.get("reason", "")),
+            reason_m2=_safe_str(r.get("reason_m2", "")),
+            reason_m3=_safe_str(r.get("reason_m3", "")),
         ))
     return rows
 

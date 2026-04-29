@@ -34,6 +34,8 @@ export interface ProcurementRow {
   urgency: string
   flags: string
   reason: string
+  reason_m2: string
+  reason_m3: string
 }
 
 export interface FilterOptions {

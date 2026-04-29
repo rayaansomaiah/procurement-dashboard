@@ -38,6 +38,8 @@ class ProcurementRow(BaseModel):
     urgency: str
     flags: str
     reason: str
+    reason_m2: str = ""
+    reason_m3: str = ""
 
 
 class FilterOptions(BaseModel):
