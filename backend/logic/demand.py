@@ -80,8 +80,9 @@ def compute_demand(
     df["recommended_lead_days"]  = [v[1] for v in vendor_info]
     df["recommended_unit_price"] = [v[2] for v in vendor_info]
 
-    rec_lead_months = df["recommended_lead_days"] / 30.0
-    df["safety_stock"] = df["monthly_demand"] * rec_lead_months * (safety_buffer_pct / 100.0)
+    # Safety stock = simple percentage of horizon demand
+    # e.g. 20% buffer on 100 units needed → 20 extra units
+    df["safety_stock"] = df["horizon_demand"] * (safety_buffer_pct / 100.0)
 
     current_stock  = df.get("current_stock",  pd.Series(0, index=df.index)).fillna(0)
     incoming_stock = df.get("incoming_stock", pd.Series(0, index=df.index)).fillna(0)
@@ -155,7 +156,7 @@ def compute_period_demand(
 
     # 30-day demand for this new batch
     monthly = df["consumption_per_month"] * machines
-    safety  = monthly * (df["recommended_lead_days"] / 30.0) * (safety_buffer_pct / 100.0)
+    safety  = monthly * (safety_buffer_pct / 100.0)  # simple % of demand
 
     df["net_required"] = monthly + safety - remaining_stock  # use leftover stock from previous period
 

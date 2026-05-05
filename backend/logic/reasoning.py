@@ -33,10 +33,10 @@ def build_reason(row) -> str:
     stock_line += f", which will last {stock_cover} days at the current consumption rate."
     lines.append(stock_line)
 
+    safety_pct_note = f"{int(math.ceil(safety))} extra units ({'+' if safety >= 0 else ''}{round(safety / horizon_demand * 100) if horizon_demand else 0}% buffer)" if safety != 0 else "no safety buffer applied"
     lines.append(
         f"Over the next {horizon_days} days, {int(math.ceil(horizon_demand))} units will be consumed "
-        f"({monthly:.0f} units/month). An additional {int(math.ceil(safety))} units are held as safety stock "
-        f"to absorb any supplier delays or demand spikes."
+        f"({monthly:.0f} units/month). Safety buffer adds {safety_pct_note}."
     )
 
     net = horizon_demand + safety - current - incoming

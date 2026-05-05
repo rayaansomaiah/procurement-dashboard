@@ -125,17 +125,25 @@ export default function Sidebar() {
         <label className="text-xs text-gray-400 uppercase tracking-widest block">Settings</label>
 
         <div className="flex flex-col gap-1">
-          <label className="text-xs text-gray-300">
-            Safety Buffer: <span className="text-white font-medium">{params.safetyBufferPct}%</span>
-          </label>
-          <input
-            type="range"
-            min={0}
-            max={100}
-            value={params.safetyBufferPct}
-            onChange={(e) => setParams({ safetyBufferPct: Number(e.target.value) })}
-            className="accent-blue-500"
-          />
+          <label className="text-xs text-gray-300">Safety Buffer</label>
+          <div className="relative">
+            <input
+              type="number"
+              value={params.safetyBufferPct}
+              onChange={(e) => {
+                const v = parseFloat(e.target.value)
+                if (!isNaN(v)) setParams({ safetyBufferPct: v })
+              }}
+              onBlur={(e) => {
+                if (e.target.value === '' || isNaN(parseFloat(e.target.value)))
+                  setParams({ safetyBufferPct: 0 })
+              }}
+              className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 pr-8 text-sm text-white focus:outline-none focus:border-blue-500"
+              placeholder="0"
+            />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">%</span>
+          </div>
+          <span className="text-[10px] text-gray-500">Negative % reduces order qty</span>
         </div>
 
         <div className="flex flex-col gap-1">
