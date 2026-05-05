@@ -1,24 +1,34 @@
-import type { KpiSummary } from '../../types/procurement'
+import { useMemo } from 'react'
+import type { ProcurementRow } from '../../types/procurement'
 
-interface Props { kpis: KpiSummary }
+interface Props { rows: ProcurementRow[] }
 
-const countCards = [
-  { label: 'Total SKUs',    key: 'total_skus',    color: 'text-white',       icon: '📦' },
-  { label: 'Critical',      key: 'critical',       color: 'text-red-400',     icon: '🔴' },
-  { label: 'High',          key: 'high',           color: 'text-orange-400',  icon: '🟠' },
-  { label: 'Action Needed', key: 'action_needed',  color: 'text-gray-300',    icon: '📋' },
-] as const
+export default function KpiCards({ rows }: Props) {
+  const kpis = useMemo(() => ({
+    total_skus:       rows.length,
+    critical:         rows.filter((r) => r.urgency === 'Critical').length,
+    high:             rows.filter((r) => r.urgency === 'High').length,
+    action_needed:    rows.filter((r) => r.recommended_order_qty > 0).length,
+    est_total_spend_m1: rows.reduce((s, r) => s + (r.estimated_cost  ?? 0), 0),
+    est_total_spend_m2: rows.reduce((s, r) => s + (r.est_cost_m2     ?? 0), 0),
+    est_total_spend_m3: rows.reduce((s, r) => s + (r.est_cost_m3     ?? 0), 0),
+  }), [rows])
 
-const spendCards = [
-  { label: 'Month 1 Spend (Now)',    key: 'est_total_spend_m1', color: 'text-yellow-400' },
-  { label: 'Month 2 Spend (Day 30)', key: 'est_total_spend_m2', color: 'text-blue-400'   },
-  { label: 'Month 3 Spend (Day 60)', key: 'est_total_spend_m3', color: 'text-purple-400' },
-] as const
+  const countCards = [
+    { label: 'Total SKUs',    key: 'total_skus'   as const, color: 'text-white',      icon: '📦' },
+    { label: 'Critical',      key: 'critical'      as const, color: 'text-red-400',    icon: '🔴' },
+    { label: 'High',          key: 'high'          as const, color: 'text-orange-400', icon: '🟠' },
+    { label: 'Action Needed', key: 'action_needed' as const, color: 'text-gray-300',   icon: '📋' },
+  ]
 
-export default function KpiCards({ kpis }: Props) {
+  const spendCards = [
+    { label: 'Month 1 Spend (Now)',    key: 'est_total_spend_m1' as const, color: 'text-yellow-400' },
+    { label: 'Month 2 Spend (Day 30)', key: 'est_total_spend_m2' as const, color: 'text-blue-400'   },
+    { label: 'Month 3 Spend (Day 60)', key: 'est_total_spend_m3' as const, color: 'text-purple-400' },
+  ]
+
   return (
     <div className="flex flex-col gap-3">
-      {/* Count row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {countCards.map((c) => (
           <div key={c.key} className="bg-gray-800 border border-gray-700 rounded-lg p-4">
@@ -27,8 +37,6 @@ export default function KpiCards({ kpis }: Props) {
           </div>
         ))}
       </div>
-
-      {/* Spend row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         {spendCards.map((c) => (
           <div key={c.key} className="bg-gray-800 border border-gray-700 rounded-lg p-4">

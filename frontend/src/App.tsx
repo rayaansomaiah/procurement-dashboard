@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Toaster } from 'sonner'
 import { useAppStore } from './store/useAppStore'
 import Sidebar from './components/layout/Sidebar'
@@ -11,8 +11,19 @@ import ExportButtons from './components/export/ExportButtons'
 import type { ProcurementRow } from './types/procurement'
 
 export default function App() {
-  const { analyzeResult, activeTab, setActiveTab } = useAppStore()
+  const { analyzeResult, activeTab, setActiveTab, filters } = useAppStore()
   const [selectedRow, setSelectedRow] = useState<ProcurementRow | null>(null)
+
+  // Apply filters centrally so KPIs and table both use the same filtered set
+  const filteredRows = useMemo(() => {
+    if (!analyzeResult) return []
+    let r = analyzeResult.rows
+    if (filters.urgency.length)  r = r.filter((x) => filters.urgency.includes(x.urgency))
+    if (filters.category.length) r = r.filter((x) => filters.category.includes(x.category.trim()))
+    if (filters.vendor.length)   r = r.filter((x) => filters.vendor.includes(x.recommended_vendor))
+    if (filters.actionOnly)      r = r.filter((x) => x.recommended_order_qty > 0)
+    return r
+  }, [analyzeResult, filters])
 
   const alertCount = analyzeResult
     ? analyzeResult.rows.filter((r) => r.urgency === 'Critical' || r.urgency === 'High').length
@@ -36,7 +47,7 @@ export default function App() {
           <>
             <div>
               <h1 className="text-xl font-bold text-white mb-4">Procurement Planning Dashboard</h1>
-              <KpiCards kpis={analyzeResult.kpis} />
+              <KpiCards rows={filteredRows} />
             </div>
 
             {/* Tabs */}
@@ -62,12 +73,12 @@ export default function App() {
               <div className="flex flex-col gap-4">
                 <TableFilters options={analyzeResult.filter_options} />
                 <ProcurementTable
-                  rows={analyzeResult.rows}
+                  rows={filteredRows}
                   onSelectRow={setSelectedRow}
                   selectedSku={selectedRow?.sku_code ?? null}
                 />
                 <ReasoningPanel
-                  rows={analyzeResult.rows}
+                  rows={filteredRows}
                   selected={selectedRow}
                   onSelect={setSelectedRow}
                 />

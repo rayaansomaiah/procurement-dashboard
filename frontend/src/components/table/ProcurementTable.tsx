@@ -7,10 +7,9 @@ import {
   type SortingState,
   type ColumnDef,
 } from '@tanstack/react-table'
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { ChevronUp, ChevronDown } from 'lucide-react'
 import type { ProcurementRow } from '../../types/procurement'
-import { useAppStore } from '../../store/useAppStore'
 
 const URGENCY_ORDER: Record<string, number> = {
   Critical: 0, High: 1, Medium: 2, Low: 3, 'No Action': 4,
@@ -224,18 +223,8 @@ function TableView({
 }
 
 export default function ProcurementTable({ rows, onSelectRow, selectedSku }: Props) {
-  const { filters } = useAppStore()
   const [viewMode, setViewMode] = useState<'sidebyside' | 'tabs'>('sidebyside')
   const [activeMonth, setActiveMonth] = useState<1 | 2 | 3>(1)
-
-  const filtered = useMemo(() => {
-    let r = rows
-    if (filters.urgency.length) r = r.filter((x) => filters.urgency.includes(x.urgency))
-    if (filters.category.length) r = r.filter((x) => filters.category.includes(x.category.trim()))
-    if (filters.vendor.length) r = r.filter((x) => filters.vendor.includes(x.recommended_vendor))
-    if (filters.actionOnly) r = r.filter((x) => x.recommended_order_qty > 0)
-    return r
-  }, [rows, filters])
 
   const MONTH_LABELS: Record<1 | 2 | 3, string> = {
     1: 'Month 1 — Now',
@@ -285,14 +274,14 @@ export default function ProcurementTable({ rows, onSelectRow, selectedSku }: Pro
       {/* Table */}
       {viewMode === 'sidebyside' ? (
         <TableView
-          data={filtered}
+          data={rows}
           columns={sideBySideCols}
           onSelectRow={onSelectRow}
           selectedSku={selectedSku}
         />
       ) : (
         <TableView
-          data={filtered}
+          data={rows}
           columns={tabCols(activeMonth)}
           onSelectRow={onSelectRow}
           selectedSku={selectedSku}
