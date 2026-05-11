@@ -133,12 +133,12 @@ def load_excel(file) -> tuple[pd.DataFrame, list[str]]:
     if "sku_code" not in df.columns:
         raise ValueError("No 'Part No' column found in the uploaded file.")
     else:
-        # Drop rows with missing Part No — cannot track or order without it
-        before = len(df)
-        df = df[~(df["sku_code"].isna() | df["sku_code"].astype(str).str.strip().isin(["", "nan"]))].reset_index(drop=True)
-        dropped = before - len(df)
-        if dropped > 0:
-            warnings.append(f"{dropped} row(s) skipped — no Part No found.")
+        # For rows missing a Part No, fall back to Description as the identifier
+        mask = df["sku_code"].isna() | df["sku_code"].astype(str).str.strip().isin(["", "nan"])
+        if mask.any() and "description" in df.columns:
+            df.loc[mask, "sku_code"] = df.loc[mask, "description"]
+            count = mask.sum()
+            warnings.append(f"{count} part(s) have no Part No — tracked by Description instead.")
 
     if "description" not in df.columns:
         df["description"] = "—"
