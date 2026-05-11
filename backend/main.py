@@ -128,6 +128,8 @@ def _run_pipeline(
 
     remaining_m1 = (current_stock + incoming_stock - df["horizon_demand"]).clip(lower=0)
     df["remaining_stock_m2"] = remaining_m1
+    df["machines_m2"] = machines_m2   # stored for reasoning
+    df["machines_m3"] = machines_m3   # stored for reasoning
 
     # ── Period 2 ────────────────────────────────────────────────────────────
     if machines_m2 > 0:

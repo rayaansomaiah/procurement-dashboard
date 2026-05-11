@@ -22,8 +22,10 @@ def build_reason(row) -> str:
         if stock_cover >= 999:
             return f"No order needed. Current stock of {int(current)} units is sufficient and demand is negligible."
         return (
-            f"No order needed. You have {int(current)} units in stock, which covers "
-            f"{stock_cover} days of demand — well beyond the {horizon_days}-day planning horizon."
+            f"No order needed for Month 1. You have {int(current)} units in stock"
+            + (f" plus {int(incoming)} incoming" if incoming > 0 else "")
+            + f", which covers {stock_cover} days of demand at the current consumption rate"
+            + f" — well beyond the {horizon_days}-day planning horizon."
         )
 
     lines = []
@@ -77,8 +79,21 @@ def build_reason_period(row, period: int) -> str:
     vendor    = row.get("recommended_vendor", "")
     vendor_str = f"{vendor} (lead time: {lead_days} days)" if vendor else f"supplier (lead time: {lead_days} days)"
 
+    machines = int(row.get(f"machines_m{period}", 0) or 0)
+
     if order_qty <= 0:
-        return f"No machines are onboarding at day {onboard_day}, so no order is needed for this period."
+        if machines <= 0:
+            return f"No machines are onboarding at day {onboard_day}, so no order is needed for this period."
+        # Machines exist but stock is sufficient — explain why
+        leftover = float(row.get(f"remaining_stock_m{period}", 0) or 0)
+        monthly_needed = consumption * machines
+        days_covered = round((leftover / (monthly_needed / 30)) if monthly_needed > 0 else 999)
+        return (
+            f"{machines} machines are onboarding at day {onboard_day} and will need "
+            f"{monthly_needed:.0f} units/month. No new order is required — after earlier "
+            f"machines consume their share, {int(leftover)} units of existing stock remain, "
+            f"covering approximately {min(days_covered, 999)} days of demand for this batch."
+        )
 
     lines = []
     lines.append(
