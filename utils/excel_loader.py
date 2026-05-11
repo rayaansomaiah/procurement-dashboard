@@ -133,6 +133,10 @@ def load_excel(file) -> tuple[pd.DataFrame, list[str]]:
     if "sku_code" not in df.columns:
         warnings.append("No 'Part No' column found. Using row numbers as SKU codes.")
         df["sku_code"] = [f"SKU-{i+1:03d}" for i in range(len(df))]
+    else:
+        # Fill blank/NaN part numbers with a generated fallback
+        mask = df["sku_code"].isna() | df["sku_code"].astype(str).str.strip().isin(["", "nan"])
+        df.loc[mask, "sku_code"] = [f"SKU-{i+1:03d}" for i in df[mask].index]
 
     if "description" not in df.columns:
         df["description"] = "—"

@@ -89,7 +89,7 @@ def compute_demand(
 
     vendor_info = df.apply(lambda r: _pick_vendor(r, vendor_strategy), axis=1)
     df["recommended_vendor"]     = [v[0] for v in vendor_info]
-    df["recommended_vendor_sku"] = [v[1] for v in vendor_info]
+    df["recommended_vendor_sku"] = [v[1] if v[1] and v[1] != "nan" else "" for v in vendor_info]
     df["recommended_lead_days"]  = [v[2] for v in vendor_info]
     df["recommended_unit_price"] = [v[3] for v in vendor_info]
 
@@ -163,7 +163,7 @@ def compute_period_demand(
 
     vendor_info = df.apply(lambda r: _pick_vendor(r, vendor_strategy), axis=1)
     df["recommended_vendor"]     = [v[0] for v in vendor_info]
-    df["recommended_vendor_sku"] = [v[1] for v in vendor_info]
+    df["recommended_vendor_sku"] = [v[1] if v[1] and v[1] != "nan" else "" for v in vendor_info]
     df["recommended_lead_days"]  = [v[2] for v in vendor_info]
     df["recommended_unit_price"] = [v[3] for v in vendor_info]
 
