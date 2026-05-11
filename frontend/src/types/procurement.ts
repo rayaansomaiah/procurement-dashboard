@@ -29,6 +29,7 @@ export interface ProcurementRow {
   est_cost_m3: number
   // Common
   recommended_vendor: string
+  recommended_vendor_sku: string
   recommended_lead_days: number
   recommended_unit_price: number
   urgency: string

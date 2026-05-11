@@ -6,6 +6,7 @@ from datetime import date
 from pathlib import Path
 
 import pandas as pd
+from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
@@ -17,6 +18,10 @@ from logic.reasoning import add_reasoning
 from schemas.models import AnalyzeResponse, FilterOptions, KpiSummary, ProcurementRow
 from utils.excel_loader import load_excel
 from utils.export import to_excel_bytes
+from utils.zoho_sync import get_zoho_stock, match_stock_to_parts
+
+# Load .env from backend/ directory
+load_dotenv(Path(__file__).parent / ".env")
 
 app = FastAPI(title="Procurement Planner API")
 
@@ -122,6 +127,7 @@ def _df_to_rows(df: pd.DataFrame):
             order_by_m3=_safe_str(r.get("order_by_m3", "—")),
             est_cost_m3=_safe_float(r.get("est_cost_m3", 0)),
             recommended_vendor=_safe_str(r.get("recommended_vendor", "")),
+            recommended_vendor_sku=_safe_str(r.get("recommended_vendor_sku", "")),
             recommended_lead_days=_safe_int(r.get("recommended_lead_days", 0)),
             recommended_unit_price=_safe_float(r.get("recommended_unit_price", 0)),
             urgency=_safe_str(r.get("urgency", "")),
@@ -217,6 +223,19 @@ async def export(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@app.get("/api/zoho/stock")
+async def zoho_stock():
+    """
+    Fetch current stock levels from Zoho Books (READ ONLY).
+    Returns {sku: stock_on_hand} for all items.
+    """
+    try:
+        stock_map = get_zoho_stock()
+        return {"status": "ok", "count": len(stock_map), "stock": stock_map}
+    except Exception as e:
+        return {"status": "error", "message": str(e), "stock": {}}
 
 
 # Serve built React app only in production

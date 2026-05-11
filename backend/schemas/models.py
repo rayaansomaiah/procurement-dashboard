@@ -33,6 +33,7 @@ class ProcurementRow(BaseModel):
     est_cost_m3: float = 0.0
     # Common
     recommended_vendor: Optional[str] = None
+    recommended_vendor_sku: Optional[str] = None
     recommended_lead_days: int = 0
     recommended_unit_price: float = 0.0
     urgency: str

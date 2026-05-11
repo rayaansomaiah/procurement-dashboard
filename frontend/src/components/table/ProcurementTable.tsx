@@ -43,7 +43,13 @@ const commonCols = [
     header: 'Stock Cover (Days)',
     cell: (i) => i.getValue() >= 999 ? '—' : i.getValue(),
   }),
-  col.accessor('recommended_vendor', { header: 'Vendor' }),
+  col.accessor('recommended_vendor', {
+    header: 'Vendor',
+    cell: (i) => {
+      const sku = i.row.original.recommended_vendor_sku
+      return sku ? `${i.getValue()} (${sku})` : i.getValue()
+    },
+  }),
   col.accessor('recommended_lead_days', { header: 'Lead (Days)' }),
   col.accessor('recommended_unit_price', {
     header: 'Unit Price (₹)',
@@ -72,7 +78,13 @@ const sideBySideCols = [
     header: 'Stock Cover',
     cell: (i) => i.getValue() >= 999 ? '—' : i.getValue(),
   }),
-  col.accessor('recommended_vendor', { header: 'Vendor' }),
+  col.accessor('recommended_vendor', {
+    header: 'Vendor',
+    cell: (i) => {
+      const sku = i.row.original.recommended_vendor_sku
+      return sku ? `${i.getValue()} (${sku})` : i.getValue()
+    },
+  }),
   col.accessor('recommended_lead_days', { header: 'Lead (Days)' }),
   col.accessor('recommended_unit_price', {
     header: 'Unit Price (₹)',

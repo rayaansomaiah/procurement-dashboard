@@ -21,28 +21,40 @@ def parse_lead_time_days(lead_str) -> int:
     return 30
 
 
+def _is_valid(val) -> bool:
+    """Check if a vendor name/value is usable."""
+    return bool(val and not pd.isna(val) and str(val).strip().lower() not in ("", "nan", "none"))
+
+
 def _pick_vendor(row, vendor_strategy: str):
-    """Return (vendor_name, lead_days, unit_price) based on strategy."""
-    l1_name  = row.get("l1_vendor", "")
-    l2_name  = row.get("l2_vendor", "")
-    l1_days  = row["lead_time_days_l1"]
-    l2_days  = row["lead_time_days_l2"]
-    l1_price = row.get("l1_price", 0) or 0
-    l2_price = row.get("l2_price", 0) or 0
+    """
+    Return (vendor_name, vendor_sku, lead_days, unit_price) based on strategy.
+    Supports L1–L6. L3–L6 default to L1 lead time (no lead time column for them).
+    """
+    l1_days = row.get("lead_time_days_l1", 30)
+    l2_days = row.get("lead_time_days_l2", l1_days)
 
-    l2_available = (
-        not pd.isna(l2_name)
-        and str(l2_name).strip() not in ("", "nan")
-    )
-    if not l2_available:
-        return l1_name, l1_days, l1_price
+    # Build candidate list: (name, sku, lead_days, price)
+    candidates = []
+    for lvl, ld in [("l1", l1_days), ("l2", l2_days),
+                    ("l3", l1_days), ("l4", l1_days), ("l5", l1_days), ("l6", l1_days)]:
+        name  = row.get(f"{lvl}_vendor", "")
+        sku   = row.get(f"{lvl}_sku", "")
+        price = float(row.get(f"{lvl}_price", 0) or 0)
+        if _is_valid(name) and price > 0:
+            candidates.append((str(name).strip(), str(sku).strip(), ld, price))
 
-    if vendor_strategy == "Fastest Delivery":
-        return (l2_name, l2_days, l2_price) if l2_days < l1_days else (l1_name, l1_days, l1_price)
-    elif vendor_strategy == "Cheapest Price":
-        return (l2_name, l2_days, l2_price) if l2_price < l1_price else (l1_name, l1_days, l1_price)
-    else:  # Prefer L1
-        return (l2_name, l2_days, l2_price) if l2_days < l1_days else (l1_name, l1_days, l1_price)
+    if not candidates:
+        return ("", "", l1_days, 0.0)
+
+    if vendor_strategy == "Cheapest Price":
+        return min(candidates, key=lambda c: c[3])
+    elif vendor_strategy == "Fastest Delivery":
+        # Only L1/L2 have reliable lead times — filter to those first
+        fast_candidates = candidates[:2] if len(candidates) >= 2 else candidates
+        return min(fast_candidates, key=lambda c: c[2])
+    else:  # Prefer L1 — always use first valid candidate (L1)
+        return candidates[0]
 
 
 def _round_qty(row):
@@ -73,15 +85,15 @@ def compute_demand(
     df["horizon_demand"] = df["monthly_demand"] * (horizon_days / 30.0)
 
     df["lead_time_days_l1"] = df["l1_lead"].apply(parse_lead_time_days)
-    df["lead_time_days_l2"] = df["l2_lead"].apply(parse_lead_time_days)
+    df["lead_time_days_l2"] = df["l2_lead"].apply(parse_lead_time_days) if "l2_lead" in df.columns else df["lead_time_days_l1"]
 
     vendor_info = df.apply(lambda r: _pick_vendor(r, vendor_strategy), axis=1)
     df["recommended_vendor"]     = [v[0] for v in vendor_info]
-    df["recommended_lead_days"]  = [v[1] for v in vendor_info]
-    df["recommended_unit_price"] = [v[2] for v in vendor_info]
+    df["recommended_vendor_sku"] = [v[1] for v in vendor_info]
+    df["recommended_lead_days"]  = [v[2] for v in vendor_info]
+    df["recommended_unit_price"] = [v[3] for v in vendor_info]
 
     # Safety stock = simple percentage of horizon demand
-    # e.g. 20% buffer on 100 units needed → 20 extra units
     df["safety_stock"] = df["horizon_demand"] * (safety_buffer_pct / 100.0)
 
     current_stock  = df.get("current_stock",  pd.Series(0, index=df.index)).fillna(0)
@@ -147,12 +159,13 @@ def compute_period_demand(
         return df[["order_qty_period", "order_by_period", "est_cost_period"]]
 
     df["lead_time_days_l1"] = df["l1_lead"].apply(parse_lead_time_days)
-    df["lead_time_days_l2"] = df["l2_lead"].apply(parse_lead_time_days)
+    df["lead_time_days_l2"] = df["l2_lead"].apply(parse_lead_time_days) if "l2_lead" in df.columns else df["lead_time_days_l1"]
 
     vendor_info = df.apply(lambda r: _pick_vendor(r, vendor_strategy), axis=1)
     df["recommended_vendor"]     = [v[0] for v in vendor_info]
-    df["recommended_lead_days"]  = [v[1] for v in vendor_info]
-    df["recommended_unit_price"] = [v[2] for v in vendor_info]
+    df["recommended_vendor_sku"] = [v[1] for v in vendor_info]
+    df["recommended_lead_days"]  = [v[2] for v in vendor_info]
+    df["recommended_unit_price"] = [v[3] for v in vendor_info]
 
     # 30-day demand for this new batch
     monthly = df["consumption_per_month"] * machines
