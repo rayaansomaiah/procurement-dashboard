@@ -95,22 +95,28 @@ def build_reason_period(row, period: int) -> str:
             f"covering approximately {min(days_covered, 999)} days of demand for this batch."
         )
 
+    monthly_demand = consumption * machines
+    # Use :.4g so small values like 0.16 aren't rounded to "0.2"
+    consumption_str = f"{consumption:.4g}"
+
     lines = []
     lines.append(
-        f"New machines are onboarding at day {onboard_day} and will immediately begin consuming this part "
-        f"at a rate of {consumption:.1f} units/machine/month."
+        f"{int(machines)} machines onboarding at day {onboard_day}, each consuming "
+        f"{consumption_str} units/month — {monthly_demand:.1f} units/month total for this batch."
     )
 
     leftover = float(row.get(f"remaining_stock_m{period}", 0) or 0)
     if leftover > 0:
+        approx_total = int(order_qty) + int(leftover)
         lines.append(
-            f"After earlier machines consume their share, {int(leftover)} units of existing stock "
-            f"remain and will be used for this batch. The remaining {int(order_qty)} units still need to be freshly procured."
+            f"This batch needs approximately {approx_total} units in total (30-day consumption + safety buffer). "
+            f"{int(leftover)} units carry over from earlier stock, covering part of that — "
+            f"you need to order {int(order_qty)} units to cover the remaining shortfall."
         )
     else:
         lines.append(
-            f"No existing stock is available for this batch — {int(order_qty)} units need to be procured fresh "
-            f"to cover their first 30 days of operation plus a safety buffer."
+            f"No existing stock carries over for this batch — all {int(order_qty)} units "
+            f"need to be freshly ordered to cover their first 30 days plus safety buffer."
         )
 
     days_to_order = max(0, onboard_day - lead_days)
