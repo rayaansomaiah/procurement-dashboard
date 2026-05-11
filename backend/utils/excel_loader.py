@@ -1,98 +1,149 @@
 import pandas as pd
 import io
 
-
 REQUIRED_COLS = ["consumption_per_month", "l1_vendor", "l1_lead", "l1_price"]
+
+# ---------------------------------------------------------------------------
+# Column name aliases → internal name
+# All keys must be lowercase + stripped (matching is done after .strip().lower())
+# ---------------------------------------------------------------------------
+_ALIASES: dict[str, str] = {
+    # Identifiers
+    "sl no": "sl_no", "sl. no": "sl_no", "sl no.": "sl_no",
+    "category": "category", "category ": "category",
+    "sub cat": "sub_category", "sub cat ": "sub_category",
+    "sub category": "sub_category", "sub category ": "sub_category",
+    "part no": "sku_code", "part no.": "sku_code", "part_no": "sku_code",
+    "sku": "sku_code", "sku code": "sku_code",
+    "description": "description",
+    "model": "model",
+    "assy name": "assy_name",
+    "month": "frequency_label",
+
+    # Consumption
+    "consumption": "consumption_per_month",
+    "consumption/month": "consumption_per_month",
+    "consumption per month": "consumption_per_month",
+    "consumption factor": "consumption_per_month",
+
+    # L1
+    "l1": "l1_vendor",
+    "l1 vendor": "l1_vendor", "l1_vendor": "l1_vendor",
+    "vendor 1": "l1_vendor", "vendor1": "l1_vendor",
+    "l1 sku": "l1_sku",
+    "l1 price": "l1_price", "price (l1)": "l1_price",
+    "l1 lead time": "l1_lead", "l1 lead time  ": "l1_lead",
+    "l1 lead": "l1_lead", "lead (l1)": "l1_lead",
+
+    # L2
+    "l2": "l2_vendor",
+    "l2 vendor": "l2_vendor", "l2_vendor": "l2_vendor",
+    "vendor 2": "l2_vendor", "vendor2": "l2_vendor",
+    "l2 sku": "l2_sku",
+    "l2 price": "l2_price", "l2 price ": "l2_price",
+    "l2price": "l2_price", "price (l2)": "l2_price",
+    "l2 lead time": "l2_lead", "l2 lead time  ": "l2_lead",
+    "l2 lead": "l2_lead", "lead (l2)": "l2_lead",
+
+    # L3
+    "l3": "l3_vendor",
+    "l3 vendor": "l3_vendor",
+    "l3 sku": "l3_sku",
+    "l3 price": "l3_price", "l3 price ": "l3_price",
+    "l3price": "l3_price", "price (l3)": "l3_price",
+    "l3 lead time": "l3_lead", "l3 lead time  ": "l3_lead",
+    "l3 lead": "l3_lead", "lead (l3)": "l3_lead",
+
+    # L4
+    "l4": "l4_vendor",
+    "l4 vendor": "l4_vendor",
+    "l4 sku": "l4_sku",
+    "l4 price": "l4_price", "l4 price ": "l4_price",
+    "l4price": "l4_price", "price (l4)": "l4_price",
+    "l4 lead time": "l4_lead", "l4 lead time  ": "l4_lead",
+    "l4 lead": "l4_lead", "lead (l4)": "l4_lead",
+
+    # L5
+    "l5": "l5_vendor",
+    "l5 vendor": "l5_vendor",
+    "l5 sku": "l5_sku",
+    "l5 price": "l5_price", "l5 price ": "l5_price",
+    "l5price": "l5_price", "price (l5)": "l5_price",
+    "l5 lead time": "l5_lead", "l5 lead time  ": "l5_lead",
+    "l5 lead": "l5_lead", "lead (l5)": "l5_lead",
+
+    # L6
+    "l6": "l6_vendor",
+    "l6 vendor": "l6_vendor",
+    "l6 sku": "l6_sku",
+    "l6 price": "l6_price", "l6 price ": "l6_price",
+    "l6price": "l6_price", "price (l6)": "l6_price",
+    "l6 lead time": "l6_lead", "l6 lead time  ": "l6_lead",
+    "l6 lead": "l6_lead", "lead (l6)": "l6_lead",
+
+    # Stock
+    "current stock": "current_stock", "current_stock": "current_stock",
+    "stock on hand": "current_stock", "closing stock": "current_stock",
+    "incoming stock": "incoming_stock", "incoming_stock": "incoming_stock",
+    "open po": "incoming_stock", "on order": "incoming_stock",
+
+    # MOQ / pack
+    "moq": "moq", "minimum order qty": "moq", "min order qty": "moq",
+    "pack size": "pack_size", "pack_size": "pack_size", "pack": "pack_size",
+
+    # Per-row machine override
+    "machines": "machines_override", "no. of machines": "machines_override",
+    "num machines": "machines_override", "machine count": "machines_override",
+}
 
 
 def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Map the raw Excel columns from Data Proc...xlsx into standardized internal names.
-    Handles the existing file format:
-      Category, Sub category, PART NO, DESCRIPTION, MODEL, ASSY NAME,
-      Month, Consumption/Month, L1 Vendor, Lead (L1), Price (L1), L2, Lead (L2), Price (L2)
-    """
     col_map = {}
-    cols = list(df.columns)
-
-    for i, c in enumerate(cols):
-        c_clean = str(c).strip().lower()
-        if c_clean in ("category", "category "):
-            col_map[c] = "category"
-        elif c_clean in ("sub category", "sub category "):
-            col_map[c] = "sub_category"
-        elif c_clean in ("part no", "part no.", "sku", "sku code", "part_no"):
-            col_map[c] = "sku_code"
-        elif c_clean in ("description",):
-            col_map[c] = "description"
-        elif c_clean in ("model",):
-            col_map[c] = "model"
-        elif c_clean in ("assy name",):
-            col_map[c] = "assy_name"
-        elif c_clean in ("month",):
-            col_map[c] = "frequency_label"
-        elif c_clean in ("consumption/month", "consumption per month", "consumption factor"):
-            col_map[c] = "consumption_per_month"
-        elif c_clean in ("l1 vendor", "l1_vendor", "vendor 1", "vendor1"):
-            col_map[c] = "l1_vendor"
-        elif c_clean in ("l2", "l2 vendor", "l2_vendor", "vendor 2", "vendor2"):
-            col_map[c] = "l2_vendor"
-
-    # Lead and Price columns — positional fallback (they repeat names in the raw file)
-    lead_cols = [c for c in cols if str(c).strip().lower() in ("lead", "lead ", "lead time")]
-    price_cols = [c for c in cols if str(c).strip().lower() in ("price", "price ", "unit price")]
-
-    if len(lead_cols) >= 1 and lead_cols[0] not in col_map:
-        col_map[lead_cols[0]] = "l1_lead"
-    if len(lead_cols) >= 2 and lead_cols[1] not in col_map:
-        col_map[lead_cols[1]] = "l2_lead"
-    if len(price_cols) >= 1 and price_cols[0] not in col_map:
-        col_map[price_cols[0]] = "l1_price"
-    if len(price_cols) >= 2 and price_cols[1] not in col_map:
-        col_map[price_cols[1]] = "l2_price"
-
-    # Optional stock columns (if user added them)
-    for c in cols:
-        c_clean = str(c).strip().lower()
-        if c_clean in ("current stock", "current_stock", "stock on hand", "closing stock") and c not in col_map:
-            col_map[c] = "current_stock"
-        elif c_clean in ("incoming stock", "incoming_stock", "open po", "on order") and c not in col_map:
-            col_map[c] = "incoming_stock"
-        elif c_clean in ("moq", "minimum order qty", "min order qty") and c not in col_map:
-            col_map[c] = "moq"
-        elif c_clean in ("pack size", "pack_size", "pack") and c not in col_map:
-            col_map[c] = "pack_size"
-        elif c_clean in ("machines", "no. of machines", "num machines", "machine count") and c not in col_map:
-            col_map[c] = "machines_override"
+    for c in df.columns:
+        key = str(c).strip().lower()
+        if key in _ALIASES and _ALIASES[key] not in col_map.values():
+            col_map[c] = _ALIASES[key]
 
     df = df.rename(columns=col_map)
 
-    # Ensure required numeric columns exist
+    # Validate required columns
     if "consumption_per_month" not in df.columns:
-        raise ValueError("Could not find 'Consumption/Month' column in the uploaded file.")
+        raise ValueError("Could not find a 'Consumption' column in the uploaded file.")
+    if "l1_vendor" not in df.columns:
+        raise ValueError("Could not find an L1 vendor column.")
+    if "l1_lead" not in df.columns:
+        raise ValueError("Could not find an L1 lead time column.")
+    if "l1_price" not in df.columns:
+        raise ValueError("Could not find an L1 price column.")
 
-    df["consumption_per_month"] = pd.to_numeric(df["consumption_per_month"], errors="coerce").fillna(0)
-
-    for col in ("l1_price", "l2_price", "current_stock", "incoming_stock", "moq", "pack_size"):
+    # Numeric coercion
+    numeric_cols = [
+        "consumption_per_month",
+        "l1_price", "l2_price", "l3_price", "l4_price", "l5_price", "l6_price",
+        "current_stock", "incoming_stock", "moq", "pack_size",
+    ]
+    for col in numeric_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
     # Default optional columns
-    for col, default in [("current_stock", 0), ("incoming_stock", 0), ("moq", 1), ("pack_size", 1)]:
+    for col, default in [
+        ("current_stock", 0), ("incoming_stock", 0), ("moq", 1), ("pack_size", 1),
+        ("l2_vendor", ""), ("l2_sku", ""), ("l2_lead", None), ("l2_price", 0),
+        ("l3_vendor", ""), ("l3_sku", ""), ("l3_lead", None), ("l3_price", 0),
+        ("l4_vendor", ""), ("l4_sku", ""), ("l4_lead", None), ("l4_price", 0),
+        ("l5_vendor", ""), ("l5_sku", ""), ("l5_lead", None), ("l5_price", 0),
+        ("l6_vendor", ""), ("l6_sku", ""), ("l6_lead", None), ("l6_price", 0),
+    ]:
         if col not in df.columns:
             df[col] = default
 
-    # Drop rows with no consumption factor and no part info
+    # Drop rows with no consumption
     df = df[df["consumption_per_month"] > 0].reset_index(drop=True)
-
     return df
 
 
 def load_excel(file) -> tuple[pd.DataFrame, list[str]]:
-    """
-    Load an Excel file (file-like object or path).
-    Returns (dataframe, list_of_warnings).
-    """
     warnings = []
     try:
         xl = pd.ExcelFile(file)
@@ -103,14 +154,17 @@ def load_excel(file) -> tuple[pd.DataFrame, list[str]]:
     except Exception as e:
         raise ValueError(f"Could not read Excel file: {e}")
 
-    try:
-        df = normalize_columns(df_raw)
-    except ValueError as e:
-        raise ValueError(str(e))
+    df = normalize_columns(df_raw)
 
     if "sku_code" not in df.columns:
-        warnings.append("No 'PART NO' column found. Using row numbers as SKU codes.")
-        df["sku_code"] = [f"SKU-{i+1:03d}" for i in range(len(df))]
+        raise ValueError("No 'Part No' column found in the uploaded file.")
+    else:
+        # For rows missing a Part No, fall back to Description as the identifier
+        mask = df["sku_code"].isna() | df["sku_code"].astype(str).str.strip().isin(["", "nan"])
+        if mask.any() and "description" in df.columns:
+            df.loc[mask, "sku_code"] = df.loc[mask, "description"]
+            count = int(mask.sum())
+            warnings.append(f"{count} part(s) have no Part No — tracked by Description instead.")
 
     if "description" not in df.columns:
         df["description"] = "—"

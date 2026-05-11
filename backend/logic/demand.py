@@ -29,15 +29,21 @@ def _is_valid(val) -> bool:
 def _pick_vendor(row, vendor_strategy: str):
     """
     Return (vendor_name, vendor_sku, lead_days, unit_price) based on strategy.
-    Supports L1–L6. L3–L6 default to L1 lead time (no lead time column for them).
+    Supports L1–L6. All tiers now have individual lead times.
     """
     l1_days = row.get("lead_time_days_l1", 30)
     l2_days = row.get("lead_time_days_l2", l1_days)
+    l3_days = row.get("lead_time_days_l3", l1_days)
+    l4_days = row.get("lead_time_days_l4", l1_days)
+    l5_days = row.get("lead_time_days_l5", l1_days)
+    l6_days = row.get("lead_time_days_l6", l1_days)
 
     # Build candidate list: (name, sku, lead_days, price)
     candidates = []
-    for lvl, ld in [("l1", l1_days), ("l2", l2_days),
-                    ("l3", l1_days), ("l4", l1_days), ("l5", l1_days), ("l6", l1_days)]:
+    for lvl, ld in [
+        ("l1", l1_days), ("l2", l2_days),
+        ("l3", l3_days), ("l4", l4_days), ("l5", l5_days), ("l6", l6_days),
+    ]:
         name  = row.get(f"{lvl}_vendor", "")
         sku   = row.get(f"{lvl}_sku", "")
         price = float(row.get(f"{lvl}_price", 0) or 0)
@@ -50,9 +56,8 @@ def _pick_vendor(row, vendor_strategy: str):
     if vendor_strategy == "Cheapest Price":
         return min(candidates, key=lambda c: c[3])
     elif vendor_strategy == "Fastest Delivery":
-        # Only L1/L2 have reliable lead times — filter to those first
-        fast_candidates = candidates[:2] if len(candidates) >= 2 else candidates
-        return min(fast_candidates, key=lambda c: c[2])
+        # All tiers now have lead times — compare all candidates
+        return min(candidates, key=lambda c: c[2])
     else:  # Prefer L1 — always use first valid candidate (L1)
         return candidates[0]
 
@@ -86,6 +91,10 @@ def compute_demand(
 
     df["lead_time_days_l1"] = df["l1_lead"].apply(parse_lead_time_days)
     df["lead_time_days_l2"] = df["l2_lead"].apply(parse_lead_time_days) if "l2_lead" in df.columns else df["lead_time_days_l1"]
+    df["lead_time_days_l3"] = df["l3_lead"].apply(parse_lead_time_days) if "l3_lead" in df.columns else df["lead_time_days_l1"]
+    df["lead_time_days_l4"] = df["l4_lead"].apply(parse_lead_time_days) if "l4_lead" in df.columns else df["lead_time_days_l1"]
+    df["lead_time_days_l5"] = df["l5_lead"].apply(parse_lead_time_days) if "l5_lead" in df.columns else df["lead_time_days_l1"]
+    df["lead_time_days_l6"] = df["l6_lead"].apply(parse_lead_time_days) if "l6_lead" in df.columns else df["lead_time_days_l1"]
 
     vendor_info = df.apply(lambda r: _pick_vendor(r, vendor_strategy), axis=1)
     df["recommended_vendor"]     = [v[0] for v in vendor_info]
@@ -160,6 +169,10 @@ def compute_period_demand(
 
     df["lead_time_days_l1"] = df["l1_lead"].apply(parse_lead_time_days)
     df["lead_time_days_l2"] = df["l2_lead"].apply(parse_lead_time_days) if "l2_lead" in df.columns else df["lead_time_days_l1"]
+    df["lead_time_days_l3"] = df["l3_lead"].apply(parse_lead_time_days) if "l3_lead" in df.columns else df["lead_time_days_l1"]
+    df["lead_time_days_l4"] = df["l4_lead"].apply(parse_lead_time_days) if "l4_lead" in df.columns else df["lead_time_days_l1"]
+    df["lead_time_days_l5"] = df["l5_lead"].apply(parse_lead_time_days) if "l5_lead" in df.columns else df["lead_time_days_l1"]
+    df["lead_time_days_l6"] = df["l6_lead"].apply(parse_lead_time_days) if "l6_lead" in df.columns else df["lead_time_days_l1"]
 
     vendor_info = df.apply(lambda r: _pick_vendor(r, vendor_strategy), axis=1)
     df["recommended_vendor"]     = [v[0] for v in vendor_info]
