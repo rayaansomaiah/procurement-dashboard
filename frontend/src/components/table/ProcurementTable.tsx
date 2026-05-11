@@ -7,7 +7,7 @@ import {
   type SortingState,
   type ColumnDef,
 } from '@tanstack/react-table'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { ChevronUp, ChevronDown, Pencil } from 'lucide-react'
 import type { ProcurementRow } from '../../types/procurement'
 import { useAppStore } from '../../store/useAppStore'
@@ -20,9 +20,7 @@ function EditableStockCell({ sku, value }: { sku: string; value: number }) {
   const displayValue = stockOverrides[sku] !== undefined ? stockOverrides[sku] : value
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(String(displayValue))
-  const inputRef = useRef<HTMLInputElement>(null)
 
-  // Sync draft when display value changes (e.g., after re-analysis)
   useEffect(() => {
     if (!editing) setDraft(String(displayValue))
   }, [displayValue, editing])
@@ -38,7 +36,6 @@ function EditableStockCell({ sku, value }: { sku: string; value: number }) {
   if (editing) {
     return (
       <input
-        ref={inputRef}
         type="number"
         min={0}
         value={draft}
@@ -50,7 +47,7 @@ function EditableStockCell({ sku, value }: { sku: string; value: number }) {
           if (e.key === 'Escape') { setDraft(String(displayValue)); setEditing(false) }
         }}
         onClick={(e) => e.stopPropagation()}
-        className="w-20 bg-gray-700 border border-blue-500 rounded px-1.5 py-0.5 text-sm text-white focus:outline-none"
+        className="w-full bg-gray-700 border border-blue-500 rounded px-1.5 py-0.5 text-sm text-white focus:outline-none"
       />
     )
   }
@@ -59,162 +56,182 @@ function EditableStockCell({ sku, value }: { sku: string; value: number }) {
   return (
     <button
       onClick={(e) => { e.stopPropagation(); setEditing(true) }}
-      className={`group flex items-center gap-1 rounded px-1 -mx-1 hover:bg-gray-700/60 transition-colors ${
+      className={`group flex items-center gap-1 w-full rounded px-1 -mx-1 hover:bg-gray-700/60 transition-colors ${
         isOverridden ? 'text-blue-300' : 'text-gray-200'
       }`}
       title="Click to edit stock"
     >
-      <span>{displayValue}</span>
-      <Pencil className="w-2.5 h-2.5 opacity-0 group-hover:opacity-60 transition-opacity" />
+      <span className="truncate">{displayValue}</span>
+      <Pencil className="w-2.5 h-2.5 shrink-0 opacity-0 group-hover:opacity-60 transition-opacity" />
     </button>
   )
 }
 
+// ---------------------------------------------------------------------------
+// Urgency badge colours
+// ---------------------------------------------------------------------------
 const URGENCY_ORDER: Record<string, number> = {
   Critical: 0, High: 1, Medium: 2, Low: 3, 'No Action': 4,
 }
 
 const URGENCY_BADGE: Record<string, string> = {
-  Critical: 'bg-red-600 text-white',
-  High: 'bg-orange-500 text-white',
-  Medium: 'bg-yellow-500 text-gray-900',
-  Low: 'bg-green-600 text-white',
+  Critical:    'bg-red-600 text-white',
+  High:        'bg-orange-500 text-white',
+  Medium:      'bg-yellow-500 text-gray-900',
+  Low:         'bg-green-600 text-white',
   'No Action': 'bg-gray-600 text-gray-200',
 }
 
 const ROW_COLOR: Record<string, string> = {
-  Critical: 'bg-red-950/40',
-  High: 'bg-orange-950/40',
-  Medium: 'bg-yellow-950/20',
-  Low: 'bg-green-950/20',
+  Critical:    'bg-red-950/40',
+  High:        'bg-orange-950/40',
+  Medium:      'bg-yellow-950/20',
+  Low:         'bg-green-950/20',
   'No Action': '',
 }
 
+// ---------------------------------------------------------------------------
+// Column definitions
+// ---------------------------------------------------------------------------
 const col = createColumnHelper<ProcurementRow>()
 
-// Common columns shown in all views
 const commonCols = [
-  col.accessor('sku_code', { header: 'Part No' }),
-  col.accessor('description', { header: 'Description' }),
-  col.accessor('category', { header: 'Category' }),
+  col.accessor('sku_code',     { header: 'Part No',       size: 120, minSize: 80,  maxSize: 300 }),
+  col.accessor('description',  { header: 'Description',   size: 180, minSize: 100, maxSize: 400 }),
+  col.accessor('category',     { header: 'Category',      size: 110, minSize: 80,  maxSize: 200 }),
   col.accessor('current_stock', {
     header: 'Current Stock',
-    cell: (i) => <EditableStockCell sku={i.row.original.sku_code} value={i.getValue()} />,
-  }),
-  col.accessor('stock_cover_days', {
-    header: 'Stock Cover (Days)',
-    cell: (i) => i.getValue() >= 999 ? '—' : i.getValue(),
-  }),
-  col.accessor('recommended_vendor', {
-    header: 'Vendor',
-    cell: (i) => {
-      const sku = i.row.original.recommended_vendor_sku
-      return sku ? `${i.getValue()} (${sku})` : i.getValue()
-    },
-  }),
-  col.accessor('recommended_lead_days', { header: 'Lead (Days)' }),
-  col.accessor('recommended_unit_price', {
-    header: 'Unit Price (₹)',
-    cell: (i) => `₹${i.getValue().toFixed(2)}`,
-  }),
-  col.accessor('urgency', {
-    header: 'Urgency',
-    sortingFn: (a, b) =>
-      (URGENCY_ORDER[a.original.urgency] ?? 5) - (URGENCY_ORDER[b.original.urgency] ?? 5),
-    cell: (i) => (
-      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${URGENCY_BADGE[i.getValue()] ?? ''}`}>
-        {i.getValue()}
-      </span>
-    ),
-  }),
-  col.accessor('flags', { header: 'Flags' }),
-]
-
-// Side-by-side: all 3 periods in one row
-const sideBySideCols = [
-  col.accessor('sku_code', { header: 'Part No' }),
-  col.accessor('description', { header: 'Description' }),
-  col.accessor('category', { header: 'Category' }),
-  col.accessor('current_stock', {
-    header: 'Current Stock',
+    size: 100, minSize: 70, maxSize: 160,
     cell: (i) => <EditableStockCell sku={i.row.original.sku_code} value={i.getValue()} />,
   }),
   col.accessor('stock_cover_days', {
     header: 'Stock Cover',
+    size: 100, minSize: 80, maxSize: 140,
     cell: (i) => i.getValue() >= 999 ? '—' : i.getValue(),
   }),
   col.accessor('recommended_vendor', {
     header: 'Vendor',
+    size: 160, minSize: 100, maxSize: 300,
     cell: (i) => {
       const sku = i.row.original.recommended_vendor_sku
       return sku ? `${i.getValue()} (${sku})` : i.getValue()
     },
   }),
-  col.accessor('recommended_lead_days', { header: 'Lead (Days)' }),
+  col.accessor('recommended_lead_days', { header: 'Lead (Days)', size: 85, minSize: 65, maxSize: 120 }),
   col.accessor('recommended_unit_price', {
     header: 'Unit Price (₹)',
+    size: 105, minSize: 80, maxSize: 150,
     cell: (i) => `₹${i.getValue().toFixed(2)}`,
-  }),
-  // Month 1
-  col.accessor('recommended_order_qty', { header: 'M1 Order Qty' }),
-  col.accessor('order_by_date', { header: 'M1 Order By' }),
-  col.accessor('estimated_cost', {
-    header: 'M1 Cost (₹)',
-    cell: (i) => `₹${i.getValue().toLocaleString('en-IN', { maximumFractionDigits: 0 })}`,
-  }),
-  // Month 2
-  col.accessor('order_qty_m2', { header: 'M2 Order Qty' }),
-  col.accessor('order_by_m2', { header: 'M2 Order By' }),
-  col.accessor('est_cost_m2', {
-    header: 'M2 Cost (₹)',
-    cell: (i) => `₹${i.getValue().toLocaleString('en-IN', { maximumFractionDigits: 0 })}`,
-  }),
-  // Month 3
-  col.accessor('order_qty_m3', { header: 'M3 Order Qty' }),
-  col.accessor('order_by_m3', { header: 'M3 Order By' }),
-  col.accessor('est_cost_m3', {
-    header: 'M3 Cost (₹)',
-    cell: (i) => `₹${i.getValue().toLocaleString('en-IN', { maximumFractionDigits: 0 })}`,
   }),
   col.accessor('urgency', {
     header: 'Urgency',
+    size: 95, minSize: 75, maxSize: 130,
     sortingFn: (a, b) =>
       (URGENCY_ORDER[a.original.urgency] ?? 5) - (URGENCY_ORDER[b.original.urgency] ?? 5),
     cell: (i) => (
-      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${URGENCY_BADGE[i.getValue()] ?? ''}`}>
+      <span className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${URGENCY_BADGE[i.getValue()] ?? ''}`}>
         {i.getValue()}
       </span>
     ),
   }),
-  col.accessor('flags', { header: 'Flags' }),
+  col.accessor('flags', { header: 'Flags', size: 105, minSize: 70, maxSize: 220 }),
 ]
 
-// Tab view columns for a specific period
+// Side-by-side: all 3 periods in one row
+const sideBySideCols = [
+  col.accessor('sku_code',    { header: 'Part No',     size: 120, minSize: 80,  maxSize: 300 }),
+  col.accessor('description', { header: 'Description', size: 180, minSize: 100, maxSize: 400 }),
+  col.accessor('category',    { header: 'Category',    size: 110, minSize: 80,  maxSize: 200 }),
+  col.accessor('current_stock', {
+    header: 'Current Stock',
+    size: 100, minSize: 70, maxSize: 160,
+    cell: (i) => <EditableStockCell sku={i.row.original.sku_code} value={i.getValue()} />,
+  }),
+  col.accessor('stock_cover_days', {
+    header: 'Stock Cover',
+    size: 100, minSize: 80, maxSize: 140,
+    cell: (i) => i.getValue() >= 999 ? '—' : i.getValue(),
+  }),
+  col.accessor('recommended_vendor', {
+    header: 'Vendor',
+    size: 160, minSize: 100, maxSize: 300,
+    cell: (i) => {
+      const sku = i.row.original.recommended_vendor_sku
+      return sku ? `${i.getValue()} (${sku})` : i.getValue()
+    },
+  }),
+  col.accessor('recommended_lead_days', { header: 'Lead (Days)', size: 85, minSize: 65, maxSize: 120 }),
+  col.accessor('recommended_unit_price', {
+    header: 'Unit Price (₹)',
+    size: 105, minSize: 80, maxSize: 150,
+    cell: (i) => `₹${i.getValue().toFixed(2)}`,
+  }),
+  // Month 1
+  col.accessor('recommended_order_qty', { header: 'M1 Qty',     size: 80,  minSize: 65, maxSize: 120 }),
+  col.accessor('order_by_date',          { header: 'M1 Order By', size: 105, minSize: 85, maxSize: 140 }),
+  col.accessor('estimated_cost', {
+    header: 'M1 Cost (₹)',
+    size: 110, minSize: 90, maxSize: 160,
+    cell: (i) => `₹${i.getValue().toLocaleString('en-IN', { maximumFractionDigits: 0 })}`,
+  }),
+  // Month 2
+  col.accessor('order_qty_m2', { header: 'M2 Qty',     size: 80,  minSize: 65, maxSize: 120 }),
+  col.accessor('order_by_m2',  { header: 'M2 Order By', size: 105, minSize: 85, maxSize: 140 }),
+  col.accessor('est_cost_m2', {
+    header: 'M2 Cost (₹)',
+    size: 110, minSize: 90, maxSize: 160,
+    cell: (i) => `₹${i.getValue().toLocaleString('en-IN', { maximumFractionDigits: 0 })}`,
+  }),
+  // Month 3
+  col.accessor('order_qty_m3', { header: 'M3 Qty',     size: 80,  minSize: 65, maxSize: 120 }),
+  col.accessor('order_by_m3',  { header: 'M3 Order By', size: 105, minSize: 85, maxSize: 140 }),
+  col.accessor('est_cost_m3', {
+    header: 'M3 Cost (₹)',
+    size: 110, minSize: 90, maxSize: 160,
+    cell: (i) => `₹${i.getValue().toLocaleString('en-IN', { maximumFractionDigits: 0 })}`,
+  }),
+  col.accessor('urgency', {
+    header: 'Urgency',
+    size: 95, minSize: 75, maxSize: 130,
+    sortingFn: (a, b) =>
+      (URGENCY_ORDER[a.original.urgency] ?? 5) - (URGENCY_ORDER[b.original.urgency] ?? 5),
+    cell: (i) => (
+      <span className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${URGENCY_BADGE[i.getValue()] ?? ''}`}>
+        {i.getValue()}
+      </span>
+    ),
+  }),
+  col.accessor('flags', { header: 'Flags', size: 105, minSize: 70, maxSize: 220 }),
+]
+
 function tabCols(period: 1 | 2 | 3): ColumnDef<ProcurementRow, any>[] {
   const periodCols =
     period === 1
       ? [
-          col.accessor('recommended_order_qty', { header: 'Order Qty' }),
-          col.accessor('order_by_date', { header: 'Order By' }),
+          col.accessor('recommended_order_qty', { header: 'Order Qty',    size: 90,  minSize: 70, maxSize: 130 }),
+          col.accessor('order_by_date',          { header: 'Order By',     size: 105, minSize: 85, maxSize: 140 }),
           col.accessor('estimated_cost', {
             header: 'Est. Cost (₹)',
+            size: 110, minSize: 90, maxSize: 160,
             cell: (i) => `₹${i.getValue().toLocaleString('en-IN', { maximumFractionDigits: 0 })}`,
           }),
         ]
       : period === 2
       ? [
-          col.accessor('order_qty_m2', { header: 'Order Qty' }),
-          col.accessor('order_by_m2', { header: 'Order By' }),
+          col.accessor('order_qty_m2', { header: 'Order Qty',    size: 90,  minSize: 70, maxSize: 130 }),
+          col.accessor('order_by_m2',  { header: 'Order By',     size: 105, minSize: 85, maxSize: 140 }),
           col.accessor('est_cost_m2', {
             header: 'Est. Cost (₹)',
+            size: 110, minSize: 90, maxSize: 160,
             cell: (i) => `₹${i.getValue().toLocaleString('en-IN', { maximumFractionDigits: 0 })}`,
           }),
         ]
       : [
-          col.accessor('order_qty_m3', { header: 'Order Qty' }),
-          col.accessor('order_by_m3', { header: 'Order By' }),
+          col.accessor('order_qty_m3', { header: 'Order Qty',    size: 90,  minSize: 70, maxSize: 130 }),
+          col.accessor('order_by_m3',  { header: 'Order By',     size: 105, minSize: 85, maxSize: 140 }),
           col.accessor('est_cost_m3', {
             header: 'Est. Cost (₹)',
+            size: 110, minSize: 90, maxSize: 160,
             cell: (i) => `₹${i.getValue().toLocaleString('en-IN', { maximumFractionDigits: 0 })}`,
           }),
         ]
@@ -222,6 +239,9 @@ function tabCols(period: 1 | 2 | 3): ColumnDef<ProcurementRow, any>[] {
   return [...commonCols.slice(0, 5), ...periodCols, ...commonCols.slice(5)]
 }
 
+// ---------------------------------------------------------------------------
+// Table view component
+// ---------------------------------------------------------------------------
 interface Props {
   rows: ProcurementRow[]
   onSelectRow: (row: ProcurementRow) => void
@@ -244,6 +264,7 @@ function TableView({
   const table = useReactTable({
     data,
     columns,
+    columnResizeMode: 'onChange',
     state: { sorting },
     onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),
@@ -252,20 +273,40 @@ function TableView({
 
   return (
     <div className="overflow-auto rounded-lg border border-gray-800 max-h-[520px]">
-      <table className="w-full text-sm border-collapse min-w-max">
+      <table
+        className="text-sm border-collapse"
+        style={{ width: table.getCenterTotalSize(), tableLayout: 'fixed' }}
+      >
         <thead className="sticky top-0 z-10">
           <tr className="bg-gray-900 border-b border-gray-700">
             {table.getFlatHeaders().map((header) => (
               <th
                 key={header.id}
-                onClick={header.column.getToggleSortingHandler()}
-                className="px-3 py-2.5 text-left text-xs text-gray-400 font-medium whitespace-nowrap cursor-pointer select-none hover:text-gray-200"
+                style={{ width: header.getSize(), position: 'relative' }}
+                className="px-3 py-2.5 text-left text-xs text-gray-400 font-medium overflow-hidden"
               >
-                <span className="inline-flex items-center gap-1">
-                  {flexRender(header.column.columnDef.header, header.getContext())}
-                  {header.column.getIsSorted() === 'asc' && <ChevronUp className="w-3 h-3" />}
-                  {header.column.getIsSorted() === 'desc' && <ChevronDown className="w-3 h-3" />}
+                {/* Sort trigger */}
+                <span
+                  onClick={header.column.getToggleSortingHandler()}
+                  className="inline-flex items-center gap-1 cursor-pointer select-none hover:text-gray-200 truncate max-w-full"
+                >
+                  <span className="truncate">
+                    {flexRender(header.column.columnDef.header, header.getContext())}
+                  </span>
+                  {header.column.getIsSorted() === 'asc'  && <ChevronUp   className="w-3 h-3 shrink-0" />}
+                  {header.column.getIsSorted() === 'desc' && <ChevronDown className="w-3 h-3 shrink-0" />}
                 </span>
+
+                {/* Resize handle */}
+                <div
+                  onMouseDown={header.getResizeHandler()}
+                  onTouchStart={header.getResizeHandler()}
+                  className={`absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none transition-colors ${
+                    header.column.getIsResizing()
+                      ? 'bg-blue-500'
+                      : 'bg-transparent hover:bg-gray-600'
+                  }`}
+                />
               </th>
             ))}
           </tr>
@@ -280,8 +321,14 @@ function TableView({
                 ${selectedSku === row.original.sku_code ? 'ring-1 ring-inset ring-blue-500' : ''}`}
             >
               {row.getVisibleCells().map((cell) => (
-                <td key={cell.id} className="px-3 py-2 text-gray-200 whitespace-nowrap">
-                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                <td
+                  key={cell.id}
+                  style={{ width: cell.column.getSize() }}
+                  className="px-3 py-2 text-gray-200 overflow-hidden"
+                >
+                  <div className="truncate">
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </div>
                 </td>
               ))}
             </tr>
@@ -299,6 +346,9 @@ function TableView({
   )
 }
 
+// ---------------------------------------------------------------------------
+// Main export
+// ---------------------------------------------------------------------------
 export default function ProcurementTable({ rows, onSelectRow, selectedSku }: Props) {
   const [viewMode, setViewMode] = useState<'sidebyside' | 'tabs'>('sidebyside')
   const [activeMonth, setActiveMonth] = useState<1 | 2 | 3>(1)
@@ -312,7 +362,7 @@ export default function ProcurementTable({ rows, onSelectRow, selectedSku }: Pro
   return (
     <div className="flex flex-col gap-3">
       {/* View toggle */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <span className="text-xs text-gray-400 mr-1">View:</span>
         {(['sidebyside', 'tabs'] as const).map((mode) => (
           <button
@@ -328,7 +378,6 @@ export default function ProcurementTable({ rows, onSelectRow, selectedSku }: Pro
           </button>
         ))}
 
-        {/* Month tabs — only show in tab view */}
         {viewMode === 'tabs' && (
           <div className="flex items-center gap-1 ml-4 border-l border-gray-700 pl-4">
             {([1, 2, 3] as const).map((m) => (
@@ -346,6 +395,8 @@ export default function ProcurementTable({ rows, onSelectRow, selectedSku }: Pro
             ))}
           </div>
         )}
+
+        <span className="ml-auto text-xs text-gray-600">Drag column edges to resize</span>
       </div>
 
       {/* Table */}
