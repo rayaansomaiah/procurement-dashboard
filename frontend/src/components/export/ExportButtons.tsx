@@ -5,14 +5,14 @@ import { useAppStore } from '../../store/useAppStore'
 import { downloadExport } from '../../api/client'
 
 export default function ExportButtons() {
-  const { uploadedFile, params, filters } = useAppStore()
+  const { uploadedFile, params, filters, stockOverrides } = useAppStore()
   const [loading, setLoading] = useState<'full' | 'filtered' | null>(null)
 
   const handleExport = async (mode: 'full' | 'filtered') => {
     if (!uploadedFile) return toast.error('No file uploaded')
     setLoading(mode)
     try {
-      await downloadExport(uploadedFile, params, filters, mode)
+      await downloadExport(uploadedFile, params, filters, mode, stockOverrides)
       toast.success('Excel downloaded')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Export failed')

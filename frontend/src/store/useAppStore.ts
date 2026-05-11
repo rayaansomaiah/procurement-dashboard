@@ -16,6 +16,11 @@ interface AppStore {
 
   activeTab: 'table' | 'alerts' | 'export'
   setActiveTab: (t: 'table' | 'alerts' | 'export') => void
+
+  // Per-SKU current stock overrides (edited inline in the table)
+  stockOverrides: Record<string, number>
+  setStockOverride: (sku: string, value: number) => void
+  clearStockOverrides: () => void
 }
 
 export const useAppStore = create<AppStore>((set) => ({
@@ -39,4 +44,9 @@ export const useAppStore = create<AppStore>((set) => ({
 
   activeTab: 'table',
   setActiveTab: (t) => set({ activeTab: t }),
+
+  stockOverrides: {},
+  setStockOverride: (sku, value) =>
+    set((s) => ({ stockOverrides: { ...s.stockOverrides, [sku]: value } })),
+  clearStockOverrides: () => set({ stockOverrides: {} }),
 }))

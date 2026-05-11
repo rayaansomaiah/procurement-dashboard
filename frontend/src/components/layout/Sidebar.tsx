@@ -51,11 +51,12 @@ function MachineInput({
 }
 
 export default function Sidebar() {
-  const { params, setParams, uploadedFile, setUploadedFile, setAnalyzeResult } = useAppStore()
+  const { params, setParams, uploadedFile, setUploadedFile, setAnalyzeResult, stockOverrides, clearStockOverrides } = useAppStore()
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const mutation = useMutation({
-    mutationFn: ({ file, p }: { file: File; p: typeof params }) => runAnalysis(file, p),
+    mutationFn: ({ file, p, overrides }: { file: File; p: typeof params; overrides: Record<string, number> }) =>
+      runAnalysis(file, p, overrides),
     onSuccess: (data) => {
       setAnalyzeResult(data)
       if (data.warnings.length > 0) data.warnings.forEach((w) => toast.warning(w))
@@ -63,21 +64,22 @@ export default function Sidebar() {
     onError: (err: Error) => toast.error(err.message),
   })
 
-  const triggerAnalysis = (file: File, p: typeof params) => {
+  const triggerAnalysis = (file: File, p: typeof params, overrides: Record<string, number>) => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => mutation.mutate({ file, p }), 400)
+    debounceRef.current = setTimeout(() => mutation.mutate({ file, p, overrides }), 400)
   }
 
   const handleFile = (f: File) => {
     setUploadedFile(f)
-    triggerAnalysis(f, params)
+    clearStockOverrides()
+    triggerAnalysis(f, params, {})
   }
 
   useEffect(() => {
     if (!uploadedFile) return
-    triggerAnalysis(uploadedFile, params)
+    triggerAnalysis(uploadedFile, params, stockOverrides)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params])
+  }, [params, stockOverrides])
 
   return (
     <aside className="w-64 shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col gap-6 p-5 min-h-screen">

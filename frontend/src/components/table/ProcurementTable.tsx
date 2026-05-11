@@ -7,9 +7,68 @@ import {
   type SortingState,
   type ColumnDef,
 } from '@tanstack/react-table'
-import { useState } from 'react'
-import { ChevronUp, ChevronDown } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { ChevronUp, ChevronDown, Pencil } from 'lucide-react'
 import type { ProcurementRow } from '../../types/procurement'
+import { useAppStore } from '../../store/useAppStore'
+
+// ---------------------------------------------------------------------------
+// Inline-editable current stock cell
+// ---------------------------------------------------------------------------
+function EditableStockCell({ sku, value }: { sku: string; value: number }) {
+  const { stockOverrides, setStockOverride } = useAppStore()
+  const displayValue = stockOverrides[sku] !== undefined ? stockOverrides[sku] : value
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(String(displayValue))
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Sync draft when display value changes (e.g., after re-analysis)
+  useEffect(() => {
+    if (!editing) setDraft(String(displayValue))
+  }, [displayValue, editing])
+
+  const commit = () => {
+    const parsed = parseFloat(draft)
+    const finalVal = isNaN(parsed) || parsed < 0 ? 0 : parsed
+    setDraft(String(finalVal))
+    setStockOverride(sku, finalVal)
+    setEditing(false)
+  }
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        type="number"
+        min={0}
+        value={draft}
+        autoFocus
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit()
+          if (e.key === 'Escape') { setDraft(String(displayValue)); setEditing(false) }
+        }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-20 bg-gray-700 border border-blue-500 rounded px-1.5 py-0.5 text-sm text-white focus:outline-none"
+      />
+    )
+  }
+
+  const isOverridden = stockOverrides[sku] !== undefined
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); setEditing(true) }}
+      className={`group flex items-center gap-1 rounded px-1 -mx-1 hover:bg-gray-700/60 transition-colors ${
+        isOverridden ? 'text-blue-300' : 'text-gray-200'
+      }`}
+      title="Click to edit stock"
+    >
+      <span>{displayValue}</span>
+      <Pencil className="w-2.5 h-2.5 opacity-0 group-hover:opacity-60 transition-opacity" />
+    </button>
+  )
+}
 
 const URGENCY_ORDER: Record<string, number> = {
   Critical: 0, High: 1, Medium: 2, Low: 3, 'No Action': 4,
@@ -38,7 +97,10 @@ const commonCols = [
   col.accessor('sku_code', { header: 'Part No' }),
   col.accessor('description', { header: 'Description' }),
   col.accessor('category', { header: 'Category' }),
-  col.accessor('current_stock', { header: 'Current Stock' }),
+  col.accessor('current_stock', {
+    header: 'Current Stock',
+    cell: (i) => <EditableStockCell sku={i.row.original.sku_code} value={i.getValue()} />,
+  }),
   col.accessor('stock_cover_days', {
     header: 'Stock Cover (Days)',
     cell: (i) => i.getValue() >= 999 ? '—' : i.getValue(),
@@ -73,7 +135,10 @@ const sideBySideCols = [
   col.accessor('sku_code', { header: 'Part No' }),
   col.accessor('description', { header: 'Description' }),
   col.accessor('category', { header: 'Category' }),
-  col.accessor('current_stock', { header: 'Current Stock' }),
+  col.accessor('current_stock', {
+    header: 'Current Stock',
+    cell: (i) => <EditableStockCell sku={i.row.original.sku_code} value={i.getValue()} />,
+  }),
   col.accessor('stock_cover_days', {
     header: 'Stock Cover',
     cell: (i) => i.getValue() >= 999 ? '—' : i.getValue(),

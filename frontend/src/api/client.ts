@@ -1,6 +1,10 @@
 import type { AnalysisParams, AnalyzeResponse, FilterState } from '../types/procurement'
 
-function buildForm(file: File, params: AnalysisParams): FormData {
+function buildForm(
+  file: File,
+  params: AnalysisParams,
+  stockOverrides: Record<string, number> = {},
+): FormData {
   const form = new FormData()
   form.append('file', file)
   form.append('machines_m1', String(params.machinesM1))
@@ -8,13 +12,18 @@ function buildForm(file: File, params: AnalysisParams): FormData {
   form.append('machines_m3', String(params.machinesM3))
   form.append('safety_buffer_pct', String(params.safetyBufferPct))
   form.append('vendor_strategy', params.vendorStrategy)
+  form.append('stock_overrides', JSON.stringify(stockOverrides))
   return form
 }
 
-export async function runAnalysis(file: File, params: AnalysisParams): Promise<AnalyzeResponse> {
+export async function runAnalysis(
+  file: File,
+  params: AnalysisParams,
+  stockOverrides: Record<string, number> = {},
+): Promise<AnalyzeResponse> {
   const res = await fetch('/api/analyze', {
     method: 'POST',
-    body: buildForm(file, params),
+    body: buildForm(file, params, stockOverrides),
   })
   if (!res.ok) {
     const text = await res.text()
@@ -28,8 +37,9 @@ export async function downloadExport(
   params: AnalysisParams,
   filters: FilterState,
   mode: 'full' | 'filtered',
+  stockOverrides: Record<string, number> = {},
 ): Promise<void> {
-  const form = buildForm(file, params)
+  const form = buildForm(file, params, stockOverrides)
   if (mode === 'filtered') {
     form.append('filter_urgency', JSON.stringify(filters.urgency))
     form.append('filter_category', JSON.stringify(filters.category))

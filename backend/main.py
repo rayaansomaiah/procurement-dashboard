@@ -40,8 +40,16 @@ def _run_pipeline(
     machines_m3: int,
     safety_buffer_pct: float,
     vendor_strategy: str,
+    stock_overrides: dict | None = None,
 ):
     df, warnings = load_excel(io.BytesIO(file_bytes))
+
+    # Apply any per-SKU stock overrides entered in the UI
+    if stock_overrides:
+        for sku, stock_val in stock_overrides.items():
+            mask = df["sku_code"].astype(str) == str(sku)
+            if mask.any():
+                df.loc[mask, "current_stock"] = float(stock_val)
 
     results = []
     for _, row in df.iterrows():
@@ -147,10 +155,12 @@ async def analyze(
     machines_m3: int = Form(0),
     safety_buffer_pct: float = Form(20.0),
     vendor_strategy: str = Form("Prefer L1"),
+    stock_overrides: str = Form("{}"),
 ):
     contents = await file.read()
+    overrides = json.loads(stock_overrides) if stock_overrides else {}
     result_df, warnings = _run_pipeline(
-        contents, machines_m1, machines_m2, machines_m3, safety_buffer_pct, vendor_strategy
+        contents, machines_m1, machines_m2, machines_m3, safety_buffer_pct, vendor_strategy, overrides
     )
 
     kpis = KpiSummary(
@@ -196,10 +206,12 @@ async def export(
     filter_category: str = Form("[]"),
     filter_vendor: str = Form("[]"),
     action_only: bool = Form(False),
+    stock_overrides: str = Form("{}"),
 ):
     contents = await file.read()
+    overrides = json.loads(stock_overrides) if stock_overrides else {}
     result_df, _ = _run_pipeline(
-        contents, machines_m1, machines_m2, machines_m3, safety_buffer_pct, vendor_strategy
+        contents, machines_m1, machines_m2, machines_m3, safety_buffer_pct, vendor_strategy, overrides
     )
 
     urgencies  = json.loads(filter_urgency)
