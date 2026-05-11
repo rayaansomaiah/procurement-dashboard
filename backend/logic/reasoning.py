@@ -35,17 +35,20 @@ def build_reason(row) -> str:
     stock_line += f", which will last {stock_cover} days at the current consumption rate."
     lines.append(stock_line)
 
-    safety_pct_note = f"{int(math.ceil(safety))} extra units ({'+' if safety >= 0 else ''}{round(safety / horizon_demand * 100) if horizon_demand else 0}% buffer)" if safety != 0 else "no safety buffer applied"
+    gross = horizon_demand + safety
+    safety_pct_display = f"{round(safety / horizon_demand * 100) if horizon_demand else 0}%"
     lines.append(
-        f"Over the next {horizon_days} days, {int(math.ceil(horizon_demand))} units will be consumed "
-        f"({monthly:.0f} units/month). Safety buffer adds {safety_pct_note}."
+        f"Total required = {int(math.ceil(horizon_demand))} units (base, {monthly:.0f}/month) "
+        f"+ {int(math.ceil(safety))} units ({safety_pct_display} safety buffer) "
+        f"= {int(math.ceil(gross))} units."
     )
 
     net = horizon_demand + safety - current - incoming
     if net > 0:
+        stock_str = f"{int(current)} in stock" + (f" + {int(incoming)} incoming" if incoming > 0 else "")
         lines.append(
-            f"After accounting for current and incoming stock, there is a shortfall of "
-            f"{int(math.ceil(net))} units — rounded up to {int(order_qty)} units to meet minimum order requirements."
+            f"Available stock: {stock_str} = {int(current + incoming)} units. "
+            f"Shortfall: {int(math.ceil(gross))} - {int(current + incoming)} = {int(order_qty)} units to order."
         )
 
     vendor_str = f"{vendor} (lead time: {lead_days} days)" if vendor else f"supplier (lead time: {lead_days} days)"
@@ -96,27 +99,33 @@ def build_reason_period(row, period: int) -> str:
         )
 
     monthly_demand = consumption * machines
-    # Use :.4g so small values like 0.16 aren't rounded to "0.2"
-    consumption_str = f"{consumption:.4g}"
+    consumption_str = f"{consumption:.4g}"  # avoids 0.16 rounding to "0.2"
+    safety_pct = float(row.get("safety_buffer_pct", 20) or 20)
+    safety_units = monthly_demand * (safety_pct / 100.0)
+    gross_required = monthly_demand + safety_units
 
     lines = []
     lines.append(
-        f"{int(machines)} machines onboarding at day {onboard_day}, each consuming "
-        f"{consumption_str} units/month — {monthly_demand:.1f} units/month total for this batch."
+        f"{int(machines)} machines onboarding at day {onboard_day}, "
+        f"each consuming {consumption_str} units/month."
+    )
+
+    # Show the calculation explicitly
+    lines.append(
+        f"Total required = {monthly_demand:.1f} units (base) "
+        f"+ {safety_units:.1f} units ({safety_pct:.4g}% safety buffer) "
+        f"= {gross_required:.1f} units."
     )
 
     leftover = float(row.get(f"remaining_stock_m{period}", 0) or 0)
     if leftover > 0:
-        approx_total = int(order_qty) + int(leftover)
         lines.append(
-            f"This batch needs approximately {approx_total} units in total (30-day consumption + safety buffer). "
-            f"{int(leftover)} units carry over from earlier stock, covering part of that — "
-            f"you need to order {int(order_qty)} units to cover the remaining shortfall."
+            f"Carry-over stock from earlier: {int(leftover)} units. "
+            f"Shortfall to order: {gross_required:.1f} - {int(leftover)} = {int(order_qty)} units."
         )
     else:
         lines.append(
-            f"No existing stock carries over for this batch — all {int(order_qty)} units "
-            f"need to be freshly ordered to cover their first 30 days plus safety buffer."
+            f"No stock carries over — all {int(order_qty)} units need to be freshly ordered."
         )
 
     days_to_order = max(0, onboard_day - lead_days)
