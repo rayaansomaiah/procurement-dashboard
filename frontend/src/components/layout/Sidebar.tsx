@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Package } from 'lucide-react'
+import { Package, RefreshCw } from 'lucide-react'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { useAppStore } from '../../store/useAppStore'
@@ -51,7 +51,8 @@ function MachineInput({
 }
 
 export default function Sidebar() {
-  const { params, setParams, uploadedFile, setUploadedFile, setAnalyzeResult, stockOverrides, clearStockOverrides } = useAppStore()
+  const { params, setParams, uploadedFile, setUploadedFile, setAnalyzeResult, stockOverrides, setStockOverride, clearStockOverrides } = useAppStore()
+  const [zohoSyncing, setZohoSyncing] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const mutation = useMutation({
@@ -75,6 +76,34 @@ export default function Sidebar() {
     triggerAnalysis(f, params, {})
   }
 
+  const handleZohoSync = async () => {
+    if (!uploadedFile) return toast.error('Upload an Excel file first')
+    setZohoSyncing(true)
+    try {
+      const form = new FormData()
+      form.append('file', uploadedFile)
+      const res = await fetch('/api/zoho/sync', { method: 'POST', body: form })
+      const data = await res.json()
+      if (data.status === 'error') {
+        toast.error(`Zoho sync failed: ${data.message}`)
+        return
+      }
+      // Apply each matched stock value as an override
+      const matches: Record<string, number> = data.matches ?? {}
+      const count = Object.keys(matches).length
+      if (count === 0) {
+        toast.warning('Zoho sync: no matching parts found between Zoho and your Excel.')
+        return
+      }
+      Object.entries(matches).forEach(([sku, stock]) => setStockOverride(sku, stock))
+      toast.success(`Zoho sync: updated stock for ${count} of ${data.total} parts.`)
+    } catch (err) {
+      toast.error('Zoho sync failed — check your credentials.')
+    } finally {
+      setZohoSyncing(false)
+    }
+  }
+
   useEffect(() => {
     if (!uploadedFile) return
     triggerAnalysis(uploadedFile, params, stockOverrides)
@@ -96,6 +125,16 @@ export default function Sidebar() {
         {mutation.isPending && (
           <p className="text-xs text-blue-400 mt-2 animate-pulse">Analyzing…</p>
         )}
+        <button
+          onClick={handleZohoSync}
+          disabled={!uploadedFile || zohoSyncing}
+          className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded text-xs font-medium
+            bg-emerald-800/50 hover:bg-emerald-700/60 disabled:opacity-40 disabled:cursor-not-allowed
+            text-emerald-300 border border-emerald-700/50 transition-colors"
+        >
+          <RefreshCw className={`w-3 h-3 ${zohoSyncing ? 'animate-spin' : ''}`} />
+          {zohoSyncing ? 'Syncing…' : 'Sync Stock from Zoho'}
+        </button>
       </section>
 
       {/* Machine Onboarding */}

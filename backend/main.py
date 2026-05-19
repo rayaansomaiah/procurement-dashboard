@@ -333,6 +333,37 @@ async def zoho_stock():
         return {"status": "error", "message": str(e), "stock": {}}
 
 
+@app.post("/api/zoho/sync")
+async def zoho_sync(file: UploadFile = File(...)):
+    """
+    Fetch stock from Zoho Books and match it against the uploaded Excel's part numbers.
+    Returns {sku_code: stock_on_hand} only for parts found in both Zoho and the Excel.
+    READ ONLY — nothing is written to Zoho.
+    """
+    try:
+        stock_map = get_zoho_stock()
+    except Exception as e:
+        return {"status": "error", "message": str(e), "matches": {}, "matched": 0, "total": 0}
+
+    contents = await file.read()
+    try:
+        df, _ = load_excel(io.BytesIO(contents))
+    except Exception as e:
+        return {"status": "error", "message": f"Could not read Excel: {e}", "matches": {}, "matched": 0, "total": 0}
+
+    matched = match_stock_to_parts(df["sku_code"].tolist(), stock_map)
+
+    # Only return parts that actually had a Zoho match
+    found = {sku: float(val) for sku, val in matched.items() if val is not None}
+
+    return {
+        "status": "ok",
+        "matched": len(found),
+        "total": len(df),
+        "matches": found,
+    }
+
+
 # Serve built React app only in production
 if os.getenv("PRODUCTION") == "true":
     dist_path = Path(__file__).parent.parent / "frontend" / "dist"
