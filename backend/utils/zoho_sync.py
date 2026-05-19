@@ -2,14 +2,24 @@
 Zoho Books integration — READ ONLY.
 Fetches stock_on_hand per SKU from Zoho Books Items API (India region).
 Never writes, edits, or deletes anything in Zoho.
+
+Matching strategy:
+  - Zoho stock map is keyed by the item's SKU field (e.g. NS1682, SKU1256).
+  - Each Excel row has up to 6 vendor SKUs (l1_sku … l6_sku).
+  - We look up every unique vendor SKU in the Zoho map and SUM the stock.
+    (Same SKU appearing for multiple vendors is counted only once.)
 """
 
 import os
 import httpx
+import pandas as pd
 from typing import Optional
 
 ZOHO_TOKEN_URL  = "https://accounts.zoho.in/oauth/v2/token"
 ZOHO_BOOKS_BASE = "https://www.zohoapis.in/books/v3"
+
+# All vendor SKU columns present in the normalised DataFrame
+_SKU_COLS = ["l1_sku", "l2_sku", "l3_sku", "l4_sku", "l5_sku", "l6_sku"]
 
 
 def _get_access_token(client_id: str, client_secret: str, refresh_token: str) -> str:
@@ -54,9 +64,7 @@ def _fetch_all_items(access_token: str, org_id: str) -> list[dict]:
         batch = data.get("items", [])
         items.extend(batch)
 
-        # Stop if no more pages
-        page_context = data.get("page_context", {})
-        if not page_context.get("has_more_page", False):
+        if not data.get("page_context", {}).get("has_more_page", False):
             break
         page += 1
 
@@ -65,9 +73,8 @@ def _fetch_all_items(access_token: str, org_id: str) -> list[dict]:
 
 def get_zoho_stock() -> dict[str, float]:
     """
-    Main entry point.
-    Returns {sku: stock_on_hand} for all items in Zoho Books.
-    Keys are stripped/uppercased for consistent matching.
+    Fetch all items from Zoho Books.
+    Returns {sku_upper: stock_on_hand} keyed by Zoho's SKU field (uppercased).
     """
     client_id     = os.getenv("ZOHO_CLIENT_ID",     "")
     client_secret = os.getenv("ZOHO_CLIENT_SECRET", "")
@@ -85,26 +92,42 @@ def get_zoho_stock() -> dict[str, float]:
 
     stock_map: dict[str, float] = {}
     for item in items:
-        # Zoho items have a 'sku' field — match it to our PART NO
-        sku = str(item.get("sku") or item.get("name") or "").strip().upper()
+        sku = str(item.get("sku") or "").strip().upper()
         if not sku:
             continue
-        stock = float(item.get("stock_on_hand") or 0)
-        stock_map[sku] = stock
+        stock_map[sku] = float(item.get("stock_on_hand") or 0)
 
     return stock_map
 
 
 def match_stock_to_parts(
-    part_numbers: list[str],
+    df: pd.DataFrame,
     stock_map: dict[str, float],
 ) -> dict[str, Optional[float]]:
     """
-    Match Excel part numbers to Zoho stock.
-    Returns {part_no: stock} — None if no match found in Zoho.
+    For each row in df, collect all vendor SKUs (l1_sku … l6_sku), look each
+    up in stock_map, and SUM the stock_on_hand values from unique matches.
+
+    Returns {sku_code: total_stock} — None if no vendor SKU matched Zoho.
     """
-    result = {}
-    for pn in part_numbers:
-        key = str(pn).strip().upper()
-        result[pn] = stock_map.get(key)   # None if not found
+    result: dict[str, Optional[float]] = {}
+
+    for _, row in df.iterrows():
+        part_id = str(row.get("sku_code", ""))
+
+        # Gather unique, non-empty vendor SKUs for this part
+        vendor_skus: set[str] = set()
+        for col in _SKU_COLS:
+            val = str(row.get(col, "") or "").strip().upper()
+            if val and val not in ("NAN", "NONE", ""):
+                vendor_skus.add(val)
+
+        # Sum stock from every Zoho SKU that matches
+        total: Optional[float] = None
+        for vsku in vendor_skus:
+            if vsku in stock_map:
+                total = (total or 0.0) + stock_map[vsku]
+
+        result[part_id] = total  # None = no match found
+
     return result

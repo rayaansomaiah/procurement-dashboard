@@ -11,5 +11,8 @@ __pycache__/
 *.pyo
 .env
 
+# Temp editor files
+*.tmp.*
+
 # Streamlit
 .streamlit/secrets.toml

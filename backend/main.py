@@ -351,7 +351,7 @@ async def zoho_sync(file: UploadFile = File(...)):
     except Exception as e:
         return {"status": "error", "message": f"Could not read Excel: {e}", "matches": {}, "matched": 0, "total": 0}
 
-    matched = match_stock_to_parts(df["sku_code"].tolist(), stock_map)
+    matched = match_stock_to_parts(df, stock_map)
 
     # Only return parts that actually had a Zoho match
     found = {sku: float(val) for sku, val in matched.items() if val is not None}
