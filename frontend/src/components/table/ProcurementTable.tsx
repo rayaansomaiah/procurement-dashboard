@@ -7,8 +7,8 @@ import {
   type SortingState,
   type ColumnDef,
 } from '@tanstack/react-table'
-import { useState, useEffect } from 'react'
-import { ChevronUp, ChevronDown, Pencil } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
+import { ChevronUp, ChevronDown, Pencil, Search, X } from 'lucide-react'
 import type { ProcurementRow } from '../../types/procurement'
 import { useAppStore } from '../../store/useAppStore'
 
@@ -105,8 +105,8 @@ const commonCols = [
     cell: (i) => <EditableStockCell sku={i.row.original.sku_code} value={i.getValue()} />,
   }),
   col.accessor('stock_cover_days', {
-    header: 'Stock Cover',
-    size: 100, minSize: 80, maxSize: 140,
+    header: 'Stock Cover (Days)',
+    size: 120, minSize: 90, maxSize: 160,
     cell: (i) => i.getValue() >= 999 ? '—' : i.getValue(),
   }),
   col.accessor('recommended_vendor', {
@@ -148,8 +148,8 @@ const sideBySideCols = [
     cell: (i) => <EditableStockCell sku={i.row.original.sku_code} value={i.getValue()} />,
   }),
   col.accessor('stock_cover_days', {
-    header: 'Stock Cover',
-    size: 100, minSize: 80, maxSize: 140,
+    header: 'Stock Cover (Days)',
+    size: 120, minSize: 90, maxSize: 160,
     cell: (i) => i.getValue() >= 999 ? '—' : i.getValue(),
   }),
   col.accessor('recommended_vendor', {
@@ -352,6 +352,7 @@ function TableView({
 export default function ProcurementTable({ rows, onSelectRow, selectedSku }: Props) {
   const [viewMode, setViewMode] = useState<'sidebyside' | 'tabs'>('sidebyside')
   const [activeMonth, setActiveMonth] = useState<1 | 2 | 3>(1)
+  const [search, setSearch] = useState('')
 
   const MONTH_LABELS: Record<1 | 2 | 3, string> = {
     1: 'Month 1 — Now',
@@ -359,8 +360,39 @@ export default function ProcurementTable({ rows, onSelectRow, selectedSku }: Pro
     3: 'Month 3 — Day 60',
   }
 
+  // Filter rows by search query — matches any string field
+  const filteredRows = useMemo(() => {
+    if (!search.trim()) return rows
+    const q = search.trim().toLowerCase()
+    return rows.filter((row) =>
+      Object.values(row).some((v) =>
+        v !== null && v !== undefined && String(v).toLowerCase().includes(q)
+      )
+    )
+  }, [rows, search])
+
   return (
     <div className="flex flex-col gap-3">
+      {/* Search bar */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500 pointer-events-none" />
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search parts, descriptions, vendors…"
+          className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 pl-8 pr-8 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+        />
+        {search && (
+          <button
+            onClick={() => setSearch('')}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+
       {/* View toggle */}
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-xs text-gray-400 mr-1">View:</span>
@@ -399,17 +431,24 @@ export default function ProcurementTable({ rows, onSelectRow, selectedSku }: Pro
         <span className="ml-auto text-xs text-gray-600">Drag column edges to resize</span>
       </div>
 
+      {/* Row count when searching */}
+      {search.trim() && (
+        <p className="text-xs text-gray-500">
+          {filteredRows.length} of {rows.length} parts
+        </p>
+      )}
+
       {/* Table */}
       {viewMode === 'sidebyside' ? (
         <TableView
-          data={rows}
+          data={filteredRows}
           columns={sideBySideCols}
           onSelectRow={onSelectRow}
           selectedSku={selectedSku}
         />
       ) : (
         <TableView
-          data={rows}
+          data={filteredRows}
           columns={tabCols(activeMonth)}
           onSelectRow={onSelectRow}
           selectedSku={selectedSku}
