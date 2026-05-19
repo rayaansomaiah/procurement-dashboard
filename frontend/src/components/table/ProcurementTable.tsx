@@ -114,7 +114,8 @@ const commonCols = [
     size: 160, minSize: 100, maxSize: 300,
     cell: (i) => {
       const sku = i.row.original.recommended_vendor_sku
-      return sku ? `${i.getValue()} (${sku})` : i.getValue()
+      const full = sku ? `${i.getValue()} (${sku})` : i.getValue()
+      return <span title={full}>{full}</span>
     },
   }),
   col.accessor('recommended_lead_days', { header: 'Lead (Days)', size: 85, minSize: 65, maxSize: 120 }),
@@ -157,7 +158,8 @@ const sideBySideCols = [
     size: 160, minSize: 100, maxSize: 300,
     cell: (i) => {
       const sku = i.row.original.recommended_vendor_sku
-      return sku ? `${i.getValue()} (${sku})` : i.getValue()
+      const full = sku ? `${i.getValue()} (${sku})` : i.getValue()
+      return <span title={full}>{full}</span>
     },
   }),
   col.accessor('recommended_lead_days', { header: 'Lead (Days)', size: 85, minSize: 65, maxSize: 120 }),
@@ -320,17 +322,22 @@ function TableView({
                 ${ROW_COLOR[row.original.urgency] ?? ''}
                 ${selectedSku === row.original.sku_code ? 'ring-1 ring-inset ring-blue-500' : ''}`}
             >
-              {row.getVisibleCells().map((cell) => (
-                <td
-                  key={cell.id}
-                  style={{ width: cell.column.getSize() }}
-                  className="px-3 py-2 text-gray-200 overflow-hidden"
-                >
-                  <div className="truncate">
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </div>
-                </td>
-              ))}
+              {row.getVisibleCells().map((cell) => {
+                const raw = cell.getValue()
+                const titleText = raw !== null && raw !== undefined ? String(raw) : ''
+                return (
+                  <td
+                    key={cell.id}
+                    style={{ width: cell.column.getSize() }}
+                    className="px-3 py-2 text-gray-200 overflow-hidden"
+                    title={titleText}
+                  >
+                    <div className="truncate">
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </div>
+                  </td>
+                )
+              })}
             </tr>
           ))}
           {table.getRowModel().rows.length === 0 && (
@@ -360,15 +367,30 @@ export default function ProcurementTable({ rows, onSelectRow, selectedSku }: Pro
     3: 'Month 3 — Day 60',
   }
 
-  // Filter rows by search query — matches any string field
+  // Filter rows by search query
   const filteredRows = useMemo(() => {
     if (!search.trim()) return rows
     const q = search.trim().toLowerCase()
-    return rows.filter((row) =>
-      Object.values(row).some((v) =>
-        v !== null && v !== undefined && String(v).toLowerCase().includes(q)
-      )
-    )
+    return rows.filter((row) => {
+      // Build the combined vendor string exactly as shown in the table cell
+      const vendorDisplay = row.recommended_vendor_sku
+        ? `${row.recommended_vendor} (${row.recommended_vendor_sku})`
+        : row.recommended_vendor
+      const searchTargets = [
+        row.sku_code,
+        row.description,
+        row.category,
+        row.recommended_vendor,
+        row.recommended_vendor_sku,
+        vendorDisplay,
+        row.urgency,
+        row.flags,
+        String(row.recommended_lead_days),
+        String(row.current_stock),
+        String(row.recommended_order_qty),
+      ]
+      return searchTargets.some((v) => v && v.toLowerCase().includes(q))
+    })
   }, [rows, search])
 
   return (
