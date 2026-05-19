@@ -97,6 +97,7 @@ const col = createColumnHelper<ProcurementRow>()
 
 const commonCols = [
   col.accessor('sku_code',     { header: 'Part No',       size: 120, minSize: 80,  maxSize: 300 }),
+  col.accessor('l1_sku',       { header: 'L1 SKU',        size: 95,  minSize: 70,  maxSize: 160 }),
   col.accessor('description',  { header: 'Description',   size: 180, minSize: 100, maxSize: 400 }),
   col.accessor('category',     { header: 'Category',      size: 110, minSize: 80,  maxSize: 200 }),
   col.accessor('current_stock', {
@@ -141,6 +142,7 @@ const commonCols = [
 // Side-by-side: all 3 periods in one row
 const sideBySideCols = [
   col.accessor('sku_code',    { header: 'Part No',     size: 120, minSize: 80,  maxSize: 300 }),
+  col.accessor('l1_sku',      { header: 'L1 SKU',      size: 95,  minSize: 70,  maxSize: 160 }),
   col.accessor('description', { header: 'Description', size: 180, minSize: 100, maxSize: 400 }),
   col.accessor('category',    { header: 'Category',    size: 110, minSize: 80,  maxSize: 200 }),
   col.accessor('current_stock', {

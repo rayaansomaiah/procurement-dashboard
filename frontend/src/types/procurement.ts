@@ -27,6 +27,8 @@ export interface ProcurementRow {
   order_qty_m3: number
   order_by_m3: string
   est_cost_m3: number
+  // Vendor SKUs from Excel
+  l1_sku: string
   // Common
   recommended_vendor: string
   recommended_vendor_sku: string

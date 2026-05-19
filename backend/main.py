@@ -217,6 +217,7 @@ def _df_to_rows(df: pd.DataFrame):
             order_qty_m3=_safe_int(r.get("order_qty_m3", 0)),
             order_by_m3=_safe_str(r.get("order_by_m3", "—")),
             est_cost_m3=_safe_float(r.get("est_cost_m3", 0)),
+            l1_sku=_safe_str(r.get("l1_sku", "")),
             recommended_vendor=_safe_str(r.get("recommended_vendor", "")),
             recommended_vendor_sku=_safe_str(r.get("recommended_vendor_sku", "")),
             recommended_lead_days=_safe_int(r.get("recommended_lead_days", 0)),

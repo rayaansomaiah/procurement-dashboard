@@ -31,6 +31,8 @@ class ProcurementRow(BaseModel):
     order_qty_m3: int = 0
     order_by_m3: str = "—"
     est_cost_m3: float = 0.0
+    # Vendor SKUs from Excel
+    l1_sku: str = ""
     # Common
     recommended_vendor: Optional[str] = None
     recommended_vendor_sku: Optional[str] = None
