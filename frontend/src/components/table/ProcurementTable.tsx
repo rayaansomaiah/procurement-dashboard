@@ -8,9 +8,10 @@ import {
   type ColumnDef,
 } from '@tanstack/react-table'
 import { useState, useEffect, useMemo } from 'react'
-import { ChevronUp, ChevronDown, Pencil, Search, X } from 'lucide-react'
+import { ChevronUp, ChevronDown, Pencil, Search, X, RefreshCw } from 'lucide-react'
 import type { ProcurementRow } from '../../types/procurement'
 import { useAppStore } from '../../store/useAppStore'
+import { fetchSalesData } from '../../api/client'
 
 // ---------------------------------------------------------------------------
 // Inline-editable current stock cell
@@ -65,6 +66,23 @@ function EditableStockCell({ sku, value }: { sku: string; value: number }) {
       <Pencil className="w-2.5 h-2.5 shrink-0 opacity-0 group-hover:opacity-60 transition-opacity" />
     </button>
   )
+}
+
+// ---------------------------------------------------------------------------
+// Sales data cells (read from store, keyed by sku_code)
+// ---------------------------------------------------------------------------
+function SalesQtyCell({ sku }: { sku: string }) {
+  const { salesData } = useAppStore()
+  const d = salesData[sku]
+  if (!d) return <span className="text-gray-600">—</span>
+  return <span>{d.qty_sold}</span>
+}
+
+function SalesPriceCell({ sku }: { sku: string }) {
+  const { salesData } = useAppStore()
+  const d = salesData[sku]
+  if (!d) return <span className="text-gray-600">—</span>
+  return <span>₹{d.avg_price.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
 }
 
 // ---------------------------------------------------------------------------
@@ -137,6 +155,18 @@ const commonCols = [
     ),
   }),
   col.accessor('flags', { header: 'Flags', size: 105, minSize: 70, maxSize: 220 }),
+  col.display({
+    id: 'qty_sold',
+    header: 'Units Sold',
+    size: 90, minSize: 70, maxSize: 130,
+    cell: (i) => <SalesQtyCell sku={i.row.original.sku_code} />,
+  }),
+  col.display({
+    id: 'avg_price',
+    header: 'Avg. Sale Price',
+    size: 115, minSize: 90, maxSize: 160,
+    cell: (i) => <SalesPriceCell sku={i.row.original.sku_code} />,
+  }),
 ]
 
 // Side-by-side: all 3 periods in one row
@@ -206,6 +236,18 @@ const sideBySideCols = [
     ),
   }),
   col.accessor('flags', { header: 'Flags', size: 105, minSize: 70, maxSize: 220 }),
+  col.display({
+    id: 'qty_sold_sbs',
+    header: 'Units Sold',
+    size: 90, minSize: 70, maxSize: 130,
+    cell: (i) => <SalesQtyCell sku={i.row.original.sku_code} />,
+  }),
+  col.display({
+    id: 'avg_price_sbs',
+    header: 'Avg. Sale Price',
+    size: 115, minSize: 90, maxSize: 160,
+    cell: (i) => <SalesPriceCell sku={i.row.original.sku_code} />,
+  }),
 ]
 
 function tabCols(period: 1 | 2 | 3): ColumnDef<ProcurementRow, any>[] {
@@ -362,6 +404,31 @@ export default function ProcurementTable({ rows, onSelectRow, selectedSku }: Pro
   const [viewMode, setViewMode] = useState<'sidebyside' | 'tabs'>('sidebyside')
   const [activeMonth, setActiveMonth] = useState<1 | 2 | 3>(1)
   const [search, setSearch] = useState('')
+  const [salesLoading, setSalesLoading] = useState(false)
+  const [salesStatus, setSalesStatus] = useState<string | null>(null)
+
+  const {
+    uploadedFile,
+    salesData, setSalesData,
+    salesFromDate, salesToDate,
+    setSalesFromDate, setSalesToDate,
+  } = useAppStore()
+
+  const syncSales = async () => {
+    if (!uploadedFile) { setSalesStatus('Upload an Excel file first.'); return }
+    setSalesLoading(true)
+    setSalesStatus(null)
+    try {
+      const res = await fetchSalesData(uploadedFile, salesFromDate, salesToDate)
+      if (res.status === 'error') { setSalesStatus(`Error: ${res.message}`); return }
+      setSalesData(res.matches)
+      setSalesStatus(`Matched ${res.matched} of ${res.total} parts`)
+    } catch (e: any) {
+      setSalesStatus(`Error: ${e.message}`)
+    } finally {
+      setSalesLoading(false)
+    }
+  }
 
   const MONTH_LABELS: Record<1 | 2 | 3, string> = {
     1: 'Month 1 — Now',
@@ -397,6 +464,40 @@ export default function ProcurementTable({ rows, onSelectRow, selectedSku }: Pro
 
   return (
     <div className="flex flex-col gap-3">
+      {/* Sales date range + sync */}
+      <div className="flex items-center gap-2 flex-wrap bg-gray-800/50 rounded-lg px-3 py-2 border border-gray-700">
+        <span className="text-xs text-gray-400 font-medium">Sales History:</span>
+        <input
+          type="date"
+          value={salesFromDate}
+          onChange={(e) => setSalesFromDate(e.target.value)}
+          className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-blue-500"
+        />
+        <span className="text-xs text-gray-500">to</span>
+        <input
+          type="date"
+          value={salesToDate}
+          onChange={(e) => setSalesToDate(e.target.value)}
+          className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-blue-500"
+        />
+        <button
+          onClick={syncSales}
+          disabled={salesLoading}
+          className="flex items-center gap-1.5 px-3 py-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed rounded text-xs text-white font-medium transition-colors"
+        >
+          <RefreshCw className={`w-3 h-3 ${salesLoading ? 'animate-spin' : ''}`} />
+          {salesLoading ? 'Syncing…' : 'Sync Sales'}
+        </button>
+        {salesStatus && (
+          <span className={`text-xs ${salesStatus.startsWith('Error') ? 'text-red-400' : 'text-green-400'}`}>
+            {salesStatus}
+          </span>
+        )}
+        {Object.keys(salesData).length > 0 && !salesStatus && (
+          <span className="text-xs text-gray-500">{Object.keys(salesData).length} parts loaded</span>
+        )}
+      </div>
+
       {/* Search bar */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500 pointer-events-none" />

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AnalysisParams, AnalyzeResponse, FilterState } from '../types/procurement'
+import type { AnalysisParams, AnalyzeResponse, FilterState, SalesData } from '../types/procurement'
 
 interface AppStore {
   params: AnalysisParams
@@ -21,6 +21,17 @@ interface AppStore {
   stockOverrides: Record<string, number>
   setStockOverride: (sku: string, value: number) => void
   clearStockOverrides: () => void
+
+  // Sales data from Zoho (keyed by sku_code)
+  salesData: Record<string, SalesData>
+  setSalesData: (d: Record<string, SalesData>) => void
+  clearSalesData: () => void
+
+  // Date range for sales query
+  salesFromDate: string
+  salesToDate: string
+  setSalesFromDate: (d: string) => void
+  setSalesToDate: (d: string) => void
 }
 
 export const useAppStore = create<AppStore>((set) => ({
@@ -49,4 +60,17 @@ export const useAppStore = create<AppStore>((set) => ({
   setStockOverride: (sku, value) =>
     set((s) => ({ stockOverrides: { ...s.stockOverrides, [sku]: value } })),
   clearStockOverrides: () => set({ stockOverrides: {} }),
+
+  salesData: {},
+  setSalesData: (d) => set({ salesData: d }),
+  clearSalesData: () => set({ salesData: {} }),
+
+  salesFromDate: (() => {
+    const d = new Date()
+    d.setMonth(d.getMonth() - 2)
+    return d.toISOString().slice(0, 10)
+  })(),
+  salesToDate: new Date().toISOString().slice(0, 10),
+  setSalesFromDate: (d) => set({ salesFromDate: d }),
+  setSalesToDate: (d) => set({ salesToDate: d }),
 }))

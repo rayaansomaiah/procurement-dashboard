@@ -20,7 +20,7 @@ from logic.reasoning import add_reasoning
 from schemas.models import AnalyzeResponse, FilterOptions, KpiSummary, ProcurementRow
 from utils.excel_loader import load_excel
 from utils.export import to_excel_bytes
-from utils.zoho_sync import get_zoho_stock, match_stock_to_parts
+from utils.zoho_sync import get_zoho_stock, match_stock_to_parts, get_sales_by_item, match_sales_to_parts
 
 # Load .env from backend/ directory
 load_dotenv(Path(__file__).parent / ".env")
@@ -361,6 +361,38 @@ async def zoho_sync(file: UploadFile = File(...)):
         "status": "ok",
         "matched": len(found),
         "total": len(df),
+        "matches": found,
+    }
+
+
+@app.post("/api/zoho/sales")
+async def zoho_sales(
+    file: UploadFile = File(...),
+    from_date: str = Form(...),
+    to_date: str = Form(...),
+):
+    """
+    Fetch Sales by Item from Zoho Books for a date range and match to Excel parts.
+    Returns {sku_code: {qty_sold, avg_price}} for matched parts.
+    """
+    try:
+        sales_map = get_sales_by_item(from_date, to_date)
+    except Exception as e:
+        return {"status": "error", "message": str(e), "matches": {}, "matched": 0}
+
+    contents = await file.read()
+    try:
+        df, _ = load_excel(io.BytesIO(contents))
+    except Exception as e:
+        return {"status": "error", "message": f"Could not read Excel: {e}", "matches": {}, "matched": 0}
+
+    matched = match_sales_to_parts(df, sales_map)
+    found = {sku: val for sku, val in matched.items() if val is not None}
+
+    return {
+        "status":  "ok",
+        "matched": len(found),
+        "total":   len(df),
         "matches": found,
     }
 

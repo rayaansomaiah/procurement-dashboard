@@ -1,4 +1,4 @@
-import type { AnalysisParams, AnalyzeResponse, FilterState } from '../types/procurement'
+import type { AnalysisParams, AnalyzeResponse, FilterState, SalesData } from '../types/procurement'
 
 function buildForm(
   file: File,
@@ -29,6 +29,20 @@ export async function runAnalysis(
     const text = await res.text()
     throw new Error(text || `Server error ${res.status}`)
   }
+  return res.json()
+}
+
+export async function fetchSalesData(
+  file: File,
+  fromDate: string,
+  toDate: string,
+): Promise<{ status: string; matched: number; total: number; matches: Record<string, SalesData>; message?: string }> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('from_date', fromDate)
+  form.append('to_date', toDate)
+  const res = await fetch('/api/zoho/sales', { method: 'POST', body: form })
+  if (!res.ok) throw new Error(`Sales sync failed: ${res.status}`)
   return res.json()
 }
 

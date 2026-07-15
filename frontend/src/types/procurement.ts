@@ -41,6 +41,11 @@ export interface ProcurementRow {
   reason_m3: string
 }
 
+export interface SalesData {
+  qty_sold: number
+  avg_price: number
+}
+
 export interface FilterOptions {
   urgency_levels: string[]
   categories: string[]
