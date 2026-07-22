@@ -11,16 +11,14 @@ Data sources (both are Reports, which the API user is authorized for):
 
 Matching strategy:
   - Zoho maps are keyed by the item's SKU field (e.g. NS1682, SKU1256).
-  - Each Excel row has up to 6 vendor SKUs (l1_sku … l6_sku).
-  - We look up every unique vendor SKU and SUM across matches.
-    (Same SKU appearing for multiple vendors is counted only once.)
+  - The Indent sheet's SKU column matches Zoho's `sku` field directly
+    (same NS####/SKU#### namespace), so matching is a plain SKU→SKU lookup.
+    Matching itself lives in logic/indent.py; this module only fetches.
 """
 
 import os
 import time
 import httpx
-import pandas as pd
-from typing import Optional
 
 # ---------------------------------------------------------------------------
 # Simple in-memory cache — avoids re-fetching all 3,000+ Zoho items on every
@@ -32,10 +30,6 @@ _cache_timestamp: float = 0.0
 
 ZOHO_TOKEN_URL  = "https://accounts.zoho.in/oauth/v2/token"
 ZOHO_BOOKS_BASE = "https://www.zohoapis.in/books/v3"
-
-# All vendor SKU columns present in the normalised DataFrame
-_SKU_COLS = ["l1_sku", "l2_sku", "l3_sku", "l4_sku", "l5_sku", "l6_sku"]
-
 
 def _get_access_token(client_id: str, client_secret: str, refresh_token: str) -> str:
     """Exchange refresh token for a short-lived access token."""
@@ -180,71 +174,6 @@ def get_sales_by_item(from_date: str, to_date: str) -> dict[str, dict]:
     return sales_map
 
 
-def match_sales_to_parts(
-    df: pd.DataFrame,
-    sales_map: dict[str, dict],
-) -> dict[str, Optional[dict]]:
-    """
-    For each row in df, collect all vendor SKUs (l1_sku … l6_sku), look each
-    up in sales_map, and SUM qty_sold / average the avg_price across matches.
-    Returns {sku_code: {qty_sold, avg_price}} — None if no match found.
-    """
-    result: dict[str, Optional[dict]] = {}
-
-    for _, row in df.iterrows():
-        part_id = str(row.get("sku_code", ""))
-
-        vendor_skus: set[str] = set()
-        for col in _SKU_COLS:
-            val = str(row.get(col, "") or "").strip().upper()
-            if val and val not in ("NAN", "NONE", ""):
-                vendor_skus.add(val)
-
-        matched = [sales_map[vsku] for vsku in vendor_skus if vsku in sales_map]
-        if not matched:
-            result[part_id] = None
-            continue
-
-        total_qty    = sum(m["qty_sold"] for m in matched)
-        total_amount = sum(m["total_amount"] for m in matched)
-        avg_price    = total_amount / total_qty if total_qty > 0 else 0.0
-
-        result[part_id] = {
-            "qty_sold":  total_qty,
-            "avg_price": round(avg_price, 2),
-        }
-
-    return result
-
-
-def match_stock_to_parts(
-    df: pd.DataFrame,
-    stock_map: dict[str, float],
-) -> dict[str, Optional[float]]:
-    """
-    For each row in df, collect all vendor SKUs (l1_sku … l6_sku), look each
-    up in stock_map, and SUM the stock_on_hand values from unique matches.
-
-    Returns {sku_code: total_stock} — None if no vendor SKU matched Zoho.
-    """
-    result: dict[str, Optional[float]] = {}
-
-    for _, row in df.iterrows():
-        part_id = str(row.get("sku_code", ""))
-
-        # Gather unique, non-empty vendor SKUs for this part
-        vendor_skus: set[str] = set()
-        for col in _SKU_COLS:
-            val = str(row.get(col, "") or "").strip().upper()
-            if val and val not in ("NAN", "NONE", ""):
-                vendor_skus.add(val)
-
-        # Sum stock from every Zoho SKU that matches
-        total: Optional[float] = None
-        for vsku in vendor_skus:
-            if vsku in stock_map:
-                total = (total or 0.0) + stock_map[vsku]
-
-        result[part_id] = total  # None = no match found
-
-    return result
+def get_sales_qty_map(from_date: str, to_date: str) -> dict[str, float]:
+    """Convenience: {sku_upper: qty_sold} over the date range (for indent calc)."""
+    return {sku: v["qty_sold"] for sku, v in get_sales_by_item(from_date, to_date).items()}

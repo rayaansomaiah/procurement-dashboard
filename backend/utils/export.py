@@ -1,82 +1,71 @@
-import pandas as pd
 import io
+import pandas as pd
 
-
-URGENCY_COLORS = {
-    "Critical": "FFCCCC",   # red
-    "High":     "FFE5CC",   # orange
-    "Medium":   "FFFACC",   # yellow
-    "Low":      "CCFFCC",   # light green
-    "No Action":"E8E8E8",   # grey
-}
-
+# (source key in result dict, display header)
 DISPLAY_COLS = [
-    ("sku_code",              "Part No"),
-    ("description",           "Description"),
-    ("category",              "Category"),
-    ("monthly_demand",        "Monthly Demand"),
-    ("horizon_demand",        "Horizon Demand"),
-    ("safety_stock",          "Safety Stock"),
-    ("current_stock",         "Current Stock"),
-    ("incoming_stock",        "Incoming Stock"),
-    ("recommended_order_qty", "Order Qty"),
-    ("recommended_vendor",    "Vendor"),
-    ("recommended_lead_days", "Lead Time (Days)"),
-    ("recommended_unit_price","Unit Price"),
-    ("estimated_cost",        "Est. Cost"),
-    ("order_by_date",         "Order By"),
-    ("urgency",               "Urgency"),
-    ("flags",                 "Flags"),
-    ("reason",                "Reason"),
+    ("sku_code",         "SKU"),
+    ("item",             "Item"),
+    ("category",         "Category"),
+    ("sub_category",     "Sub Category"),
+    ("brand",            "Brand"),
+    ("qoh",              "QOH"),
+    ("purchase_price",   "Purchase Price"),
+    ("prev_sales_qty",   "Prev Sales Qty"),
+    ("sales_per_week",   "Sales / Week"),
+    ("arc",              "ARC (Weeks)"),
+    ("sales_proj",       "Sales Projection"),
+    ("mdp_cdp",          "MDP/CDP"),
+    ("consumption_hrs",  "Consumption Hrs"),
+    ("consumption_load", "Consumption Load"),
+    ("wallet_proj",      "Wallet Projection"),
+    ("flf",              "FLF"),
+    ("effective_demand", "Effective Demand"),
+    ("indent_qty",       "Indent Qty"),
+    ("purchase_amount",  "Purchase Amount"),
+    ("stock_value",      "Stock Value"),
+    ("matched",          "Zoho Matched"),
 ]
 
+_INDENT_BG = "FFF2CC"  # soft amber for rows that need ordering
 
-def to_excel_bytes(df: pd.DataFrame) -> bytes:
+
+def to_excel_bytes(rows: list[dict]) -> bytes:
     output = io.BytesIO()
 
-    # Select and rename columns that exist
-    export_cols = [(src, dst) for src, dst in DISPLAY_COLS if src in df.columns]
-    out_df = df[[src for src, _ in export_cols]].copy()
-    out_df.columns = [dst for _, dst in export_cols]
+    out_df = pd.DataFrame([
+        {dst: r.get(src, "") for src, dst in DISPLAY_COLS} for r in rows
+    ], columns=[dst for _, dst in DISPLAY_COLS])
 
-    # Round numeric columns (coerce first to handle any mixed-type columns)
-    for col in ("Monthly Demand", "Horizon Demand", "Safety Stock", "Est. Cost"):
-        if col in out_df.columns:
-            out_df[col] = pd.to_numeric(out_df[col], errors="coerce").round(2)
-
-    # Replace NaN/Inf so xlsxwriter doesn't choke
     out_df = out_df.replace([float("inf"), float("-inf")], "").fillna("")
 
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        out_df.to_excel(writer, sheet_name="Procurement Plan", index=False)
-
+        out_df.to_excel(writer, sheet_name="Replenishment Indent", index=False)
         wb = writer.book
-        ws = writer.sheets["Procurement Plan"]
+        ws = writer.sheets["Replenishment Indent"]
 
-        # Header format
         header_fmt = wb.add_format({
             "bold": True, "bg_color": "2C5F8A", "font_color": "FFFFFF",
-            "border": 1, "align": "center", "valign": "vcenter", "text_wrap": True
+            "border": 1, "align": "center", "valign": "vcenter", "text_wrap": True,
         })
         for col_num, col_name in enumerate(out_df.columns):
             ws.write(0, col_num, col_name, header_fmt)
 
-        # Row formatting by urgency
-        urgency_col_idx = list(out_df.columns).index("Urgency") if "Urgency" in out_df.columns else None
-
+        indent_idx = list(out_df.columns).index("Indent Qty")
         for row_num, row in enumerate(out_df.itertuples(index=False), start=1):
-            urgency = row.Urgency if "Urgency" in out_df.columns else "Low"
-            bg = URGENCY_COLORS.get(urgency, "FFFFFF")
-            row_fmt = wb.add_format({"bg_color": bg, "border": 1})
+            needs = False
+            try:
+                needs = float(row[indent_idx]) > 0
+            except (ValueError, TypeError):
+                needs = False
+            row_fmt = wb.add_format({"bg_color": _INDENT_BG, "border": 1}) if needs \
+                else wb.add_format({"border": 1})
             for col_num, val in enumerate(row):
                 ws.write(row_num, col_num, val, row_fmt)
 
-        # Column widths — auto fit based on header and data content
         for col_num, col_name in enumerate(out_df.columns):
             col_data = out_df.iloc[:, col_num].astype(str)
             max_data_len = col_data.str.len().max() if not col_data.empty else 0
-            width = max(len(col_name), max_data_len, 10) + 2
-            width = min(width, 60)  # cap at 60 for Reason column
+            width = min(max(len(col_name), int(max_data_len), 8) + 2, 45)
             ws.set_column(col_num, col_num, width)
 
         ws.freeze_panes(1, 0)

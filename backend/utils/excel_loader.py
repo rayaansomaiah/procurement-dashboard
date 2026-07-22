@@ -1,172 +1,169 @@
-import pandas as pd
+"""
+Loader for the Replenishment Indent master sheet.
+
+The sheet layout:
+  Row 1  — global inputs (Machine count in M1, Monthly usage hrs in O1)
+  Row 2  — column headers
+  Row 3+ — one row per SKU
+
+Per-SKU applicability % (what fraction of the machine fleet uses this SKU)
+is stored only inside the MDP/CDP cell formula, in one of these shapes:
+    =$M$1*0.75     -> 0.75
+    =500*0.4       -> 0.40      (500 = hardcoded machine base)
+    =500           -> 1.00      (no multiplier = 100%)
+    =$M$1          -> 1.00
+We parse the multiplier out (openpyxl, data_only=False) so it survives even
+when the UI machine count differs from the sheet's hardcoded base.
+"""
+
 import io
+import re
+import openpyxl
 
-REQUIRED_COLS = ["consumption_per_month", "l1_vendor", "l1_lead", "l1_price"]
-
-# ---------------------------------------------------------------------------
-# Column name aliases → internal name
-# All keys must be lowercase + stripped (matching is done after .strip().lower())
-# ---------------------------------------------------------------------------
-_ALIASES: dict[str, str] = {
-    # Identifiers
-    "sl no": "sl_no", "sl. no": "sl_no", "sl no.": "sl_no",
-    "category": "category", "category ": "category",
-    "sub cat": "sub_category", "sub cat ": "sub_category",
-    "sub category": "sub_category", "sub category ": "sub_category",
-    "part no": "sku_code", "part no.": "sku_code", "part_no": "sku_code",
-    "sku": "sku_code", "sku code": "sku_code",
-    "description": "description",
-    "model": "model",
-    "assy name": "assy_name",
-    "month": "frequency_label",
-
-    # Consumption
-    "consumption": "consumption_per_month",
-    "consumption/month": "consumption_per_month",
-    "consumption per month": "consumption_per_month",
-    "consumption factor": "consumption_per_month",
-
-    # L1
-    "l1": "l1_vendor",
-    "l1 vendor": "l1_vendor", "l1_vendor": "l1_vendor",
-    "vendor 1": "l1_vendor", "vendor1": "l1_vendor",
-    "l1 sku": "l1_sku",
-    "l1 price": "l1_price", "price (l1)": "l1_price",
-    "l1 lead time": "l1_lead", "l1 lead time  ": "l1_lead",
-    "l1 lead": "l1_lead", "lead (l1)": "l1_lead",
-
-    # L2
-    "l2": "l2_vendor",
-    "l2 vendor": "l2_vendor", "l2_vendor": "l2_vendor",
-    "vendor 2": "l2_vendor", "vendor2": "l2_vendor",
-    "l2 sku": "l2_sku",
-    "l2 price": "l2_price", "l2 price ": "l2_price",
-    "l2price": "l2_price", "price (l2)": "l2_price",
-    "l2 lead time": "l2_lead", "l2 lead time  ": "l2_lead",
-    "l2 lead": "l2_lead", "lead (l2)": "l2_lead",
-
-    # L3
-    "l3": "l3_vendor",
-    "l3 vendor": "l3_vendor",
-    "l3 sku": "l3_sku",
-    "l3 price": "l3_price", "l3 price ": "l3_price",
-    "l3price": "l3_price", "price (l3)": "l3_price",
-    "l3 lead time": "l3_lead", "l3 lead time  ": "l3_lead",
-    "l3 lead": "l3_lead", "lead (l3)": "l3_lead",
-
-    # L4
-    "l4": "l4_vendor",
-    "l4 vendor": "l4_vendor",
-    "l4 sku": "l4_sku",
-    "l4 price": "l4_price", "l4 price ": "l4_price",
-    "l4price": "l4_price", "price (l4)": "l4_price",
-    "l4 lead time": "l4_lead", "l4 lead time  ": "l4_lead",
-    "l4 lead": "l4_lead", "lead (l4)": "l4_lead",
-
-    # L5
-    "l5": "l5_vendor",
-    "l5 vendor": "l5_vendor",
-    "l5 sku": "l5_sku",
-    "l5 price": "l5_price", "l5 price ": "l5_price",
-    "l5price": "l5_price", "price (l5)": "l5_price",
-    "l5 lead time": "l5_lead", "l5 lead time  ": "l5_lead",
-    "l5 lead": "l5_lead", "lead (l5)": "l5_lead",
-
-    # L6
-    "l6": "l6_vendor",
-    "l6 vendor": "l6_vendor",
-    "l6 sku": "l6_sku",
-    "l6 price": "l6_price", "l6 price ": "l6_price",
-    "l6price": "l6_price", "price (l6)": "l6_price",
-    "l6 lead time": "l6_lead", "l6 lead time  ": "l6_lead",
-    "l6 lead": "l6_lead", "lead (l6)": "l6_lead",
-
-    # Stock
-    "current stock": "current_stock", "current_stock": "current_stock",
-    "stock on hand": "current_stock", "closing stock": "current_stock",
-    "incoming stock": "incoming_stock", "incoming_stock": "incoming_stock",
-    "open po": "incoming_stock", "on order": "incoming_stock",
-
-    # MOQ / pack
-    "moq": "moq", "minimum order qty": "moq", "min order qty": "moq",
-    "pack size": "pack_size", "pack_size": "pack_size", "pack": "pack_size",
-
-    # Per-row machine override
-    "machines": "machines_override", "no. of machines": "machines_override",
-    "num machines": "machines_override", "machine count": "machines_override",
+# Header text (stripped + lowercased) -> internal column name
+_HEADER_ALIASES = {
+    "sku": "sku_code", "sku code": "sku_code", "part no": "sku_code",
+    "category": "category",
+    "sub category": "sub_category", "sub cat": "sub_category",
+    "item": "item", "item name": "item", "description": "item",
+    "brand": "brand",
+    "qoh": "qoh_excel", "quantity on hand": "qoh_excel",
+    "purchase price": "purchase_price", "price": "purchase_price",
+    "previous 5m sales": "prev_sales_excel", "previous sales": "prev_sales_excel",
+    "wallet qty": "wallet_qty",
+    "mdp/cdp": "mdp_cell", "mdp": "mdp_cell",
+    "consumption hrs": "consumption_hrs", "consumption hours": "consumption_hrs",
+    "flf": "flf",
+    "arc (weeks)": "arc_excel", "arc": "arc_excel",
 }
 
-
-def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
-    col_map = {}
-    for c in df.columns:
-        key = str(c).strip().lower()
-        if key in _ALIASES and _ALIASES[key] not in col_map.values():
-            col_map[c] = _ALIASES[key]
-
-    df = df.rename(columns=col_map)
-
-    # Validate required columns
-    if "consumption_per_month" not in df.columns:
-        raise ValueError("Could not find a 'Consumption' column in the uploaded file.")
-    if "l1_vendor" not in df.columns:
-        raise ValueError("Could not find an L1 vendor column.")
-    if "l1_lead" not in df.columns:
-        raise ValueError("Could not find an L1 lead time column.")
-    if "l1_price" not in df.columns:
-        raise ValueError("Could not find an L1 price column.")
-
-    # Numeric coercion
-    numeric_cols = [
-        "consumption_per_month",
-        "l1_price", "l2_price", "l3_price", "l4_price", "l5_price", "l6_price",
-        "current_stock", "incoming_stock", "moq", "pack_size",
-    ]
-    for col in numeric_cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
-
-    # Default optional columns
-    for col, default in [
-        ("current_stock", 0), ("incoming_stock", 0), ("moq", 1), ("pack_size", 1),
-        ("l2_vendor", ""), ("l2_sku", ""), ("l2_lead", None), ("l2_price", 0),
-        ("l3_vendor", ""), ("l3_sku", ""), ("l3_lead", None), ("l3_price", 0),
-        ("l4_vendor", ""), ("l4_sku", ""), ("l4_lead", None), ("l4_price", 0),
-        ("l5_vendor", ""), ("l5_sku", ""), ("l5_lead", None), ("l5_price", 0),
-        ("l6_vendor", ""), ("l6_sku", ""), ("l6_lead", None), ("l6_price", 0),
-    ]:
-        if col not in df.columns:
-            df[col] = default
-
-    # Drop rows with no consumption
-    df = df[df["consumption_per_month"] > 0].reset_index(drop=True)
-    return df
+_MACHINE_REF = re.compile(r"^\$?[A-Z]+\$?\d+$")  # e.g. $M$1, M1
 
 
-def load_excel(file) -> tuple[pd.DataFrame, list[str]]:
-    warnings = []
+def _parse_applicability(formula, machine_base: float) -> float:
+    """Extract the applicability fraction from an MDP/CDP cell formula."""
+    if not isinstance(formula, str):
+        return 1.0
+    s = formula.lstrip("=").replace(" ", "")
+    if not s:
+        return 1.0
+    tokens = s.split("*")
+
+    mults: list[float] = []
+    for tok in tokens:
+        if _MACHINE_REF.match(tok):
+            continue  # a cell reference like $M$1 -> the machine base
+        try:
+            mults.append(float(tok))
+        except ValueError:
+            continue  # unrecognised token — ignore
+
+    # Drop one numeric token equal to the machine base (the hardcoded 500).
+    if machine_base and machine_base in mults:
+        mults.remove(machine_base)
+
+    if not mults:
+        return 1.0
+    result = 1.0
+    for m in mults:
+        result *= m
+    return result
+
+
+def _num(val, default=0.0) -> float:
     try:
-        xl = pd.ExcelFile(file)
-        sheet = xl.sheet_names[0]
-        if len(xl.sheet_names) > 1:
-            warnings.append(f"Multiple sheets found. Using first sheet: '{sheet}'.")
-        df_raw = xl.parse(sheet)
+        if val is None or val == "":
+            return default
+        return float(val)
+    except (ValueError, TypeError):
+        return default
+
+
+def _str(val) -> str:
+    return "" if val is None else str(val).strip()
+
+
+def _find_header_row(ws) -> int:
+    """Return the 1-based row index whose first cells contain 'SKU'."""
+    for r in range(1, min(11, ws.max_row + 1)):
+        for c in range(1, min(6, ws.max_column + 1)):
+            if _str(ws.cell(row=r, column=c).value).lower() == "sku":
+                return r
+    return 2  # sensible default for this sheet
+
+
+def load_indent_excel(file) -> tuple[list[dict], list[str]]:
+    """
+    Parse the indent master sheet.
+    Returns (rows, warnings) where rows is a list of per-SKU dicts.
+    """
+    warnings: list[str] = []
+    if isinstance(file, (bytes, bytearray)):
+        file = io.BytesIO(file)
+
+    try:
+        wb = openpyxl.load_workbook(file, data_only=False, read_only=True)
     except Exception as e:
         raise ValueError(f"Could not read Excel file: {e}")
 
-    df = normalize_columns(df_raw)
+    ws = wb[wb.sheetnames[0]]
+    if len(wb.sheetnames) > 1:
+        warnings.append(f"Multiple sheets found. Using first sheet: '{ws.title}'.")
 
-    if "sku_code" not in df.columns:
-        raise ValueError("No 'Part No' column found in the uploaded file.")
-    else:
-        # For rows missing a Part No, fall back to Description as the identifier
-        mask = df["sku_code"].isna() | df["sku_code"].astype(str).str.strip().isin(["", "nan"])
-        if mask.any() and "description" in df.columns:
-            df.loc[mask, "sku_code"] = df.loc[mask, "description"]
-            count = int(mask.sum())
-            warnings.append(f"{count} part(s) have no Part No — tracked by Description instead.")
+    header_row = _find_header_row(ws)
 
-    if "description" not in df.columns:
-        df["description"] = "—"
+    # Machine base value (M1) — used only to identify the base token in formulas.
+    machine_base = _num(ws.cell(row=1, column=13).value, 0.0)  # column M = 13
 
-    return df, warnings
+    # Map each column index -> internal name
+    col_map: dict[int, str] = {}
+    for c in range(1, ws.max_column + 1):
+        key = _str(ws.cell(row=header_row, column=c).value).lower()
+        if key in _HEADER_ALIASES and _HEADER_ALIASES[key] not in col_map.values():
+            col_map[c] = _HEADER_ALIASES[key]
+
+    if "sku_code" not in col_map.values():
+        raise ValueError("Could not find a 'SKU' column in the uploaded sheet.")
+    if "mdp_cell" not in col_map.values():
+        warnings.append("No 'MDP/CDP' column found — applicability defaults to 100%.")
+
+    rows: list[dict] = []
+    missing_sku = 0
+    for r in range(header_row + 1, ws.max_row + 1):
+        raw: dict = {}
+        for c, name in col_map.items():
+            raw[name] = ws.cell(row=r, column=c).value
+
+        sku = _str(raw.get("sku_code"))
+        item = _str(raw.get("item"))
+        # Skip fully-empty rows
+        if not sku and not item:
+            continue
+        if not sku:
+            sku = item  # fall back to item name as identifier
+            missing_sku += 1
+
+        applicability = _parse_applicability(raw.get("mdp_cell"), machine_base)
+
+        rows.append({
+            "sku_code":        sku,
+            "category":        _str(raw.get("category")),
+            "sub_category":    _str(raw.get("sub_category")),
+            "item":            item or sku,
+            "brand":           _str(raw.get("brand")),
+            "purchase_price":  _num(raw.get("purchase_price")),
+            "wallet_qty":      _num(raw.get("wallet_qty"), 0.0),
+            "consumption_hrs": _num(raw.get("consumption_hrs"), 0.0),
+            "flf":             _num(raw.get("flf"), 0.0),
+            "applicability":   applicability,
+            "prev_sales_excel": _num(raw.get("prev_sales_excel"), 0.0),
+        })
+
+    wb.close()
+
+    if not rows:
+        raise ValueError("No SKU rows found in the uploaded sheet.")
+    if missing_sku:
+        warnings.append(f"{missing_sku} row(s) have no SKU — tracked by Item name instead.")
+
+    return rows, warnings

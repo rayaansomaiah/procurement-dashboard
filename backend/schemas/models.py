@@ -1,58 +1,50 @@
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List
 
 
 class KpiSummary(BaseModel):
     total_skus: int
-    critical: int
-    high: int
-    action_needed: int
-    est_total_spend_m1: float = 0.0
-    est_total_spend_m2: float = 0.0
-    est_total_spend_m3: float = 0.0
+    skus_needing_indent: int
+    total_indent_qty: float = 0.0
+    total_purchase_amount: float = 0.0
+    total_stock_value: float = 0.0
+    unmatched_count: int = 0
 
 
-class ProcurementRow(BaseModel):
+class IndentRow(BaseModel):
     sku_code: str
-    description: str
-    category: Optional[str] = None
-    monthly_demand: float
-    current_stock: int
-    stock_cover_days: int
-    # Period 1 (machines onboarded now)
-    recommended_order_qty: int
-    order_by_date: str
-    estimated_cost: float
-    # Period 2 (machines onboarding at day 30)
-    order_qty_m2: int = 0
-    order_by_m2: str = "—"
-    est_cost_m2: float = 0.0
-    # Period 3 (machines onboarding at day 60)
-    order_qty_m3: int = 0
-    order_by_m3: str = "—"
-    est_cost_m3: float = 0.0
-    # Vendor SKUs from Excel
-    l1_sku: str = ""
-    # Common
-    recommended_vendor: Optional[str] = None
-    recommended_vendor_sku: Optional[str] = None
-    recommended_lead_days: int = 0
-    recommended_unit_price: float = 0.0
-    urgency: str
-    flags: str
-    reason: str
-    reason_m2: str = ""
-    reason_m3: str = ""
+    item: str = ""
+    category: str = ""
+    sub_category: str = ""
+    brand: str = ""
+    qoh: float = 0.0
+    purchase_price: float = 0.0
+    prev_sales_qty: float = 0.0
+    sales_per_week: float = 0.0
+    arc: float = 1.0
+    sales_proj: float = 0.0
+    mdp_cdp: float = 0.0
+    applicability: float = 1.0
+    consumption_hrs: float = 0.0
+    consumption_load: float = 0.0
+    wallet_proj: float = 0.0
+    flf: float = 0.0
+    effective_demand: int = 0
+    indent_qty: int = 0
+    purchase_amount: float = 0.0
+    stock_value: float = 0.0
+    matched: bool = False
 
 
 class FilterOptions(BaseModel):
-    urgency_levels: List[str]
     categories: List[str]
-    vendors: List[str]
+    sub_categories: List[str]
+    brands: List[str]
 
 
 class AnalyzeResponse(BaseModel):
     warnings: List[str]
     kpis: KpiSummary
-    rows: List[ProcurementRow]
+    rows: List[IndentRow]
     filter_options: FilterOptions
+    unmatched_skus: List[str]

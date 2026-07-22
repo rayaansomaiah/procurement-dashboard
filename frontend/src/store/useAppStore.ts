@@ -1,5 +1,14 @@
 import { create } from 'zustand'
-import type { AnalysisParams, AnalyzeResponse, FilterState, SalesData } from '../types/procurement'
+import type { AnalysisParams, AnalyzeResponse, FilterState } from '../types/procurement'
+
+function defaultRange(): { from: string; to: string } {
+  const to = new Date()
+  const from = new Date()
+  from.setDate(from.getDate() - 56) // 8 weeks
+  return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) }
+}
+
+const { from, to } = defaultRange()
 
 interface AppStore {
   params: AnalysisParams
@@ -14,33 +23,26 @@ interface AppStore {
   filters: FilterState
   setFilter: (f: Partial<FilterState>) => void
 
-  activeTab: 'table' | 'alerts' | 'export'
-  setActiveTab: (t: 'table' | 'alerts' | 'export') => void
+  activeTab: 'table' | 'export'
+  setActiveTab: (t: 'table' | 'export') => void
 
-  // Per-SKU current stock overrides (edited inline in the table)
-  stockOverrides: Record<string, number>
-  setStockOverride: (sku: string, value: number) => void
-  clearStockOverrides: () => void
+  // Per-SKU overrides edited inline in the table
+  qohOverrides: Record<string, number>
+  setQohOverride: (sku: string, value: number) => void
+  clearQohOverrides: () => void
 
-  // Sales data from Zoho (keyed by sku_code)
-  salesData: Record<string, SalesData>
-  setSalesData: (d: Record<string, SalesData>) => void
-  clearSalesData: () => void
-
-  // Date range for sales query
-  salesFromDate: string
-  salesToDate: string
-  setSalesFromDate: (d: string) => void
-  setSalesToDate: (d: string) => void
+  flfOverrides: Record<string, number>
+  setFlfOverride: (sku: string, value: number) => void
+  clearFlfOverrides: () => void
 }
 
 export const useAppStore = create<AppStore>((set) => ({
   params: {
-    machinesM1: 0,
-    machinesM2: 0,
-    machinesM3: 0,
-    safetyBufferPct: 20,
-    vendorStrategy: 'Prefer L1',
+    machineCount: 500,
+    monthlyUsageHrs: 130,
+    arcWeeks: 1,
+    salesFrom: from,
+    salesTo: to,
   },
   setParams: (p) => set((s) => ({ params: { ...s.params, ...p } })),
 
@@ -50,27 +52,19 @@ export const useAppStore = create<AppStore>((set) => ({
   analyzeResult: null,
   setAnalyzeResult: (r) => set({ analyzeResult: r }),
 
-  filters: { urgency: [], category: [], vendor: [], actionOnly: false },
+  filters: { category: [], subCategory: [], brand: [], needsIndentOnly: false },
   setFilter: (f) => set((s) => ({ filters: { ...s.filters, ...f } })),
 
   activeTab: 'table',
   setActiveTab: (t) => set({ activeTab: t }),
 
-  stockOverrides: {},
-  setStockOverride: (sku, value) =>
-    set((s) => ({ stockOverrides: { ...s.stockOverrides, [sku]: value } })),
-  clearStockOverrides: () => set({ stockOverrides: {} }),
+  qohOverrides: {},
+  setQohOverride: (sku, value) =>
+    set((s) => ({ qohOverrides: { ...s.qohOverrides, [sku]: value } })),
+  clearQohOverrides: () => set({ qohOverrides: {} }),
 
-  salesData: {},
-  setSalesData: (d) => set({ salesData: d }),
-  clearSalesData: () => set({ salesData: {} }),
-
-  salesFromDate: (() => {
-    const d = new Date()
-    d.setMonth(d.getMonth() - 2)
-    return d.toISOString().slice(0, 10)
-  })(),
-  salesToDate: new Date().toISOString().slice(0, 10),
-  setSalesFromDate: (d) => set({ salesFromDate: d }),
-  setSalesToDate: (d) => set({ salesToDate: d }),
+  flfOverrides: {},
+  setFlfOverride: (sku, value) =>
+    set((s) => ({ flfOverrides: { ...s.flfOverrides, [sku]: value } })),
+  clearFlfOverrides: () => set({ flfOverrides: {} }),
 }))

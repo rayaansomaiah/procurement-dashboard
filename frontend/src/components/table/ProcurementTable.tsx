@@ -8,29 +8,43 @@ import {
   type ColumnDef,
 } from '@tanstack/react-table'
 import { useState, useEffect, useMemo } from 'react'
-import { ChevronUp, ChevronDown, Pencil, Search, X, RefreshCw } from 'lucide-react'
-import type { ProcurementRow } from '../../types/procurement'
+import { ChevronUp, ChevronDown, Pencil, Search, X, Check } from 'lucide-react'
+import type { IndentRow } from '../../types/procurement'
 import { useAppStore } from '../../store/useAppStore'
-import { fetchSalesData } from '../../api/client'
 
 // ---------------------------------------------------------------------------
-// Inline-editable current stock cell
+// Inline-editable numeric cell (used for QOH and FLF)
 // ---------------------------------------------------------------------------
-function EditableStockCell({ sku, value }: { sku: string; value: number }) {
-  const { stockOverrides, setStockOverride } = useAppStore()
-  const displayValue = stockOverrides[sku] !== undefined ? stockOverrides[sku] : value
+function EditableNumberCell({
+  value,
+  overridden,
+  onCommit,
+  min = 0,
+  max,
+  step = 1,
+  fmt = (v: number) => String(v),
+}: {
+  value: number
+  overridden: boolean
+  onCommit: (v: number) => void
+  min?: number
+  max?: number
+  step?: number
+  fmt?: (v: number) => string
+}) {
   const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(String(displayValue))
+  const [draft, setDraft] = useState(String(value))
 
   useEffect(() => {
-    if (!editing) setDraft(String(displayValue))
-  }, [displayValue, editing])
+    if (!editing) setDraft(String(value))
+  }, [value, editing])
 
   const commit = () => {
-    const parsed = parseFloat(draft)
-    const finalVal = isNaN(parsed) || parsed < 0 ? 0 : parsed
-    setDraft(String(finalVal))
-    setStockOverride(sku, finalVal)
+    let v = parseFloat(draft)
+    if (isNaN(v)) v = min
+    if (v < min) v = min
+    if (max !== undefined && v > max) v = max
+    onCommit(v)
     setEditing(false)
   }
 
@@ -38,14 +52,16 @@ function EditableStockCell({ sku, value }: { sku: string; value: number }) {
     return (
       <input
         type="number"
-        min={0}
+        min={min}
+        max={max}
+        step={step}
         value={draft}
         autoFocus
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
           if (e.key === 'Enter') commit()
-          if (e.key === 'Escape') { setDraft(String(displayValue)); setEditing(false) }
+          if (e.key === 'Escape') { setDraft(String(value)); setEditing(false) }
         }}
         onClick={(e) => e.stopPropagation()}
         className="w-full bg-gray-700 border border-blue-500 rounded px-1.5 py-0.5 text-sm text-white focus:outline-none"
@@ -53,262 +69,135 @@ function EditableStockCell({ sku, value }: { sku: string; value: number }) {
     )
   }
 
-  const isOverridden = stockOverrides[sku] !== undefined
   return (
     <button
       onClick={(e) => { e.stopPropagation(); setEditing(true) }}
       className={`group flex items-center gap-1 w-full rounded px-1 -mx-1 hover:bg-gray-700/60 transition-colors ${
-        isOverridden ? 'text-blue-300' : 'text-gray-200'
+        overridden ? 'text-blue-300' : 'text-gray-200'
       }`}
-      title="Click to edit stock"
+      title="Click to edit"
     >
-      <span className="truncate">{displayValue}</span>
+      <span className="truncate">{fmt(value)}</span>
       <Pencil className="w-2.5 h-2.5 shrink-0 opacity-0 group-hover:opacity-60 transition-opacity" />
     </button>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Sales data cells (read from store, keyed by sku_code)
+// Cell components that read overrides from the store
 // ---------------------------------------------------------------------------
-function SalesQtyCell({ sku }: { sku: string }) {
-  const { salesData } = useAppStore()
-  const d = salesData[sku]
-  if (!d) return <span className="text-gray-600">—</span>
-  return <span>{d.qty_sold}</span>
+function QohCell({ row }: { row: IndentRow }) {
+  const { qohOverrides, setQohOverride } = useAppStore()
+  const overridden = qohOverrides[row.sku_code] !== undefined
+  const value = overridden ? qohOverrides[row.sku_code] : row.qoh
+  return (
+    <EditableNumberCell
+      value={value}
+      overridden={overridden}
+      onCommit={(v) => setQohOverride(row.sku_code, v)}
+      min={0}
+    />
+  )
 }
 
-function SalesPriceCell({ sku }: { sku: string }) {
-  const { salesData } = useAppStore()
-  const d = salesData[sku]
-  if (!d) return <span className="text-gray-600">—</span>
-  return <span>₹{d.avg_price.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
-}
-
-// ---------------------------------------------------------------------------
-// Urgency badge colours
-// ---------------------------------------------------------------------------
-const URGENCY_ORDER: Record<string, number> = {
-  Critical: 0, High: 1, Medium: 2, Low: 3, 'No Action': 4,
-}
-
-const URGENCY_BADGE: Record<string, string> = {
-  Critical:    'bg-red-600 text-white',
-  High:        'bg-orange-500 text-white',
-  Medium:      'bg-yellow-500 text-gray-900',
-  Low:         'bg-green-600 text-white',
-  'No Action': 'bg-gray-600 text-gray-200',
-}
-
-const ROW_COLOR: Record<string, string> = {
-  Critical:    'bg-red-950/40',
-  High:        'bg-orange-950/40',
-  Medium:      'bg-yellow-950/20',
-  Low:         'bg-green-950/20',
-  'No Action': '',
+function FlfCell({ row }: { row: IndentRow }) {
+  const { flfOverrides, setFlfOverride } = useAppStore()
+  const overridden = flfOverrides[row.sku_code] !== undefined
+  const value = overridden ? flfOverrides[row.sku_code] : row.flf
+  return (
+    <EditableNumberCell
+      value={value}
+      overridden={overridden}
+      onCommit={(v) => setFlfOverride(row.sku_code, v)}
+      min={0}
+      max={1}
+      step={0.1}
+      fmt={(v) => v.toFixed(2)}
+    />
+  )
 }
 
 // ---------------------------------------------------------------------------
 // Column definitions
 // ---------------------------------------------------------------------------
-const col = createColumnHelper<ProcurementRow>()
+const col = createColumnHelper<IndentRow>()
 
-const commonCols = [
-  col.accessor('sku_code',     { header: 'Part No',       size: 120, minSize: 80,  maxSize: 300 }),
-  col.accessor('l1_sku',       { header: 'L1 SKU',        size: 95,  minSize: 70,  maxSize: 160 }),
-  col.accessor('description',  { header: 'Description',   size: 180, minSize: 100, maxSize: 400 }),
-  col.accessor('category',     { header: 'Category',      size: 110, minSize: 80,  maxSize: 200 }),
-  col.accessor('current_stock', {
-    header: 'Current Stock',
-    size: 100, minSize: 70, maxSize: 160,
-    cell: (i) => <EditableStockCell sku={i.row.original.sku_code} value={i.getValue()} />,
+const money = (v: number) => `₹${(v ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
+const num2 = (v: number) => (v ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })
+
+const columns: ColumnDef<IndentRow, any>[] = [
+  col.accessor('sku_code',     { header: 'SKU',          size: 110, minSize: 80,  maxSize: 220 }),
+  col.accessor('item',         { header: 'Item',         size: 190, minSize: 110, maxSize: 400 }),
+  col.accessor('category',     { header: 'Category',     size: 110, minSize: 80,  maxSize: 200 }),
+  col.accessor('sub_category', { header: 'Sub Category', size: 120, minSize: 80,  maxSize: 220 }),
+  col.accessor('brand',        { header: 'Brand',        size: 90,  minSize: 60,  maxSize: 180 }),
+  col.accessor('qoh', {
+    header: 'QOH', size: 90, minSize: 65, maxSize: 140,
+    cell: (i) => <QohCell row={i.row.original} />,
   }),
-  col.accessor('stock_cover_days', {
-    header: 'Stock Cover (Days)',
-    size: 120, minSize: 90, maxSize: 160,
-    cell: (i) => i.getValue() >= 999 ? '—' : i.getValue(),
+  col.accessor('purchase_price', {
+    header: 'Purchase Price', size: 115, minSize: 90, maxSize: 160,
+    cell: (i) => money(i.getValue()),
   }),
-  col.accessor('recommended_vendor', {
-    header: 'Vendor',
-    size: 160, minSize: 100, maxSize: 300,
-    cell: (i) => {
-      const sku = i.row.original.recommended_vendor_sku
-      const full = sku ? `${i.getValue()} (${sku})` : i.getValue()
-      return <span title={full}>{full}</span>
-    },
+  col.accessor('prev_sales_qty', { header: 'Prev Sales',  size: 90,  minSize: 70, maxSize: 130, cell: (i) => num2(i.getValue()) }),
+  col.accessor('sales_per_week', { header: 'Sales / Wk',  size: 90,  minSize: 70, maxSize: 130, cell: (i) => num2(i.getValue()) }),
+  col.accessor('arc',            { header: 'ARC',         size: 65,  minSize: 50, maxSize: 100 }),
+  col.accessor('sales_proj',     { header: 'Sales Proj',  size: 95,  minSize: 70, maxSize: 140, cell: (i) => num2(i.getValue()) }),
+  col.accessor('mdp_cdp',        { header: 'MDP/CDP',     size: 90,  minSize: 65, maxSize: 130, cell: (i) => num2(i.getValue()) }),
+  col.accessor('consumption_hrs',  { header: 'Cons. Hrs',  size: 90, minSize: 65, maxSize: 130 }),
+  col.accessor('consumption_load', { header: 'Cons. Load', size: 95, minSize: 70, maxSize: 130, cell: (i) => num2(i.getValue()) }),
+  col.accessor('wallet_proj',    { header: 'Wallet Proj', size: 100, minSize: 75, maxSize: 150, cell: (i) => num2(i.getValue()) }),
+  col.accessor('flf', {
+    header: 'FLF', size: 75, minSize: 60, maxSize: 120,
+    cell: (i) => <FlfCell row={i.row.original} />,
   }),
-  col.accessor('recommended_lead_days', { header: 'Lead (Days)', size: 85, minSize: 65, maxSize: 120 }),
-  col.accessor('recommended_unit_price', {
-    header: 'Unit Price (₹)',
-    size: 105, minSize: 80, maxSize: 150,
-    cell: (i) => `₹${i.getValue().toFixed(2)}`,
-  }),
-  col.accessor('urgency', {
-    header: 'Urgency',
-    size: 95, minSize: 75, maxSize: 130,
-    sortingFn: (a, b) =>
-      (URGENCY_ORDER[a.original.urgency] ?? 5) - (URGENCY_ORDER[b.original.urgency] ?? 5),
+  col.accessor('effective_demand', { header: 'Eff. Demand', size: 105, minSize: 80, maxSize: 150 }),
+  col.accessor('indent_qty', {
+    header: 'Indent', size: 90, minSize: 65, maxSize: 130,
     cell: (i) => (
-      <span className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${URGENCY_BADGE[i.getValue()] ?? ''}`}>
+      <span className={i.getValue() > 0 ? 'font-semibold text-amber-300' : 'text-gray-500'}>
         {i.getValue()}
       </span>
     ),
   }),
-  col.accessor('flags', { header: 'Flags', size: 105, minSize: 70, maxSize: 220 }),
-  col.display({
-    id: 'qty_sold',
-    header: 'Units Sold',
-    size: 90, minSize: 70, maxSize: 130,
-    cell: (i) => <SalesQtyCell sku={i.row.original.sku_code} />,
+  col.accessor('purchase_amount', {
+    header: 'Purchase Amt', size: 115, minSize: 90, maxSize: 170,
+    cell: (i) => money(i.getValue()),
   }),
-  col.display({
-    id: 'avg_price',
-    header: 'Avg. Sale Price',
-    size: 115, minSize: 90, maxSize: 160,
-    cell: (i) => <SalesPriceCell sku={i.row.original.sku_code} />,
+  col.accessor('stock_value', {
+    header: 'Stock Value', size: 115, minSize: 90, maxSize: 170,
+    cell: (i) => money(i.getValue()),
   }),
-]
-
-// Side-by-side: all 3 periods in one row
-const sideBySideCols = [
-  col.accessor('sku_code',    { header: 'Part No',     size: 120, minSize: 80,  maxSize: 300 }),
-  col.accessor('l1_sku',      { header: 'L1 SKU',      size: 95,  minSize: 70,  maxSize: 160 }),
-  col.accessor('description', { header: 'Description', size: 180, minSize: 100, maxSize: 400 }),
-  col.accessor('category',    { header: 'Category',    size: 110, minSize: 80,  maxSize: 200 }),
-  col.accessor('current_stock', {
-    header: 'Current Stock',
-    size: 100, minSize: 70, maxSize: 160,
-    cell: (i) => <EditableStockCell sku={i.row.original.sku_code} value={i.getValue()} />,
-  }),
-  col.accessor('stock_cover_days', {
-    header: 'Stock Cover (Days)',
-    size: 120, minSize: 90, maxSize: 160,
-    cell: (i) => i.getValue() >= 999 ? '—' : i.getValue(),
-  }),
-  col.accessor('recommended_vendor', {
-    header: 'Vendor',
-    size: 160, minSize: 100, maxSize: 300,
-    cell: (i) => {
-      const sku = i.row.original.recommended_vendor_sku
-      const full = sku ? `${i.getValue()} (${sku})` : i.getValue()
-      return <span title={full}>{full}</span>
-    },
-  }),
-  col.accessor('recommended_lead_days', { header: 'Lead (Days)', size: 85, minSize: 65, maxSize: 120 }),
-  col.accessor('recommended_unit_price', {
-    header: 'Unit Price (₹)',
-    size: 105, minSize: 80, maxSize: 150,
-    cell: (i) => `₹${i.getValue().toFixed(2)}`,
-  }),
-  // Month 1
-  col.accessor('recommended_order_qty', { header: 'M1 Qty',     size: 80,  minSize: 65, maxSize: 120 }),
-  col.accessor('order_by_date',          { header: 'M1 Order By', size: 105, minSize: 85, maxSize: 140 }),
-  col.accessor('estimated_cost', {
-    header: 'M1 Cost (₹)',
-    size: 110, minSize: 90, maxSize: 160,
-    cell: (i) => `₹${i.getValue().toLocaleString('en-IN', { maximumFractionDigits: 0 })}`,
-  }),
-  // Month 2
-  col.accessor('order_qty_m2', { header: 'M2 Qty',     size: 80,  minSize: 65, maxSize: 120 }),
-  col.accessor('order_by_m2',  { header: 'M2 Order By', size: 105, minSize: 85, maxSize: 140 }),
-  col.accessor('est_cost_m2', {
-    header: 'M2 Cost (₹)',
-    size: 110, minSize: 90, maxSize: 160,
-    cell: (i) => `₹${i.getValue().toLocaleString('en-IN', { maximumFractionDigits: 0 })}`,
-  }),
-  // Month 3
-  col.accessor('order_qty_m3', { header: 'M3 Qty',     size: 80,  minSize: 65, maxSize: 120 }),
-  col.accessor('order_by_m3',  { header: 'M3 Order By', size: 105, minSize: 85, maxSize: 140 }),
-  col.accessor('est_cost_m3', {
-    header: 'M3 Cost (₹)',
-    size: 110, minSize: 90, maxSize: 160,
-    cell: (i) => `₹${i.getValue().toLocaleString('en-IN', { maximumFractionDigits: 0 })}`,
-  }),
-  col.accessor('urgency', {
-    header: 'Urgency',
-    size: 95, minSize: 75, maxSize: 130,
-    sortingFn: (a, b) =>
-      (URGENCY_ORDER[a.original.urgency] ?? 5) - (URGENCY_ORDER[b.original.urgency] ?? 5),
-    cell: (i) => (
-      <span className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${URGENCY_BADGE[i.getValue()] ?? ''}`}>
-        {i.getValue()}
-      </span>
-    ),
-  }),
-  col.accessor('flags', { header: 'Flags', size: 105, minSize: 70, maxSize: 220 }),
-  col.display({
-    id: 'qty_sold_sbs',
-    header: 'Units Sold',
-    size: 90, minSize: 70, maxSize: 130,
-    cell: (i) => <SalesQtyCell sku={i.row.original.sku_code} />,
-  }),
-  col.display({
-    id: 'avg_price_sbs',
-    header: 'Avg. Sale Price',
-    size: 115, minSize: 90, maxSize: 160,
-    cell: (i) => <SalesPriceCell sku={i.row.original.sku_code} />,
+  col.accessor('matched', {
+    header: 'Zoho', size: 65, minSize: 55, maxSize: 90,
+    cell: (i) => i.getValue()
+      ? <Check className="w-3.5 h-3.5 text-emerald-400" />
+      : <span className="text-amber-400" title="No Zoho match">—</span>,
   }),
 ]
 
-function tabCols(period: 1 | 2 | 3): ColumnDef<ProcurementRow, any>[] {
-  const periodCols =
-    period === 1
-      ? [
-          col.accessor('recommended_order_qty', { header: 'Order Qty',    size: 90,  minSize: 70, maxSize: 130 }),
-          col.accessor('order_by_date',          { header: 'Order By',     size: 105, minSize: 85, maxSize: 140 }),
-          col.accessor('estimated_cost', {
-            header: 'Est. Cost (₹)',
-            size: 110, minSize: 90, maxSize: 160,
-            cell: (i) => `₹${i.getValue().toLocaleString('en-IN', { maximumFractionDigits: 0 })}`,
-          }),
-        ]
-      : period === 2
-      ? [
-          col.accessor('order_qty_m2', { header: 'Order Qty',    size: 90,  minSize: 70, maxSize: 130 }),
-          col.accessor('order_by_m2',  { header: 'Order By',     size: 105, minSize: 85, maxSize: 140 }),
-          col.accessor('est_cost_m2', {
-            header: 'Est. Cost (₹)',
-            size: 110, minSize: 90, maxSize: 160,
-            cell: (i) => `₹${i.getValue().toLocaleString('en-IN', { maximumFractionDigits: 0 })}`,
-          }),
-        ]
-      : [
-          col.accessor('order_qty_m3', { header: 'Order Qty',    size: 90,  minSize: 70, maxSize: 130 }),
-          col.accessor('order_by_m3',  { header: 'Order By',     size: 105, minSize: 85, maxSize: 140 }),
-          col.accessor('est_cost_m3', {
-            header: 'Est. Cost (₹)',
-            size: 110, minSize: 90, maxSize: 160,
-            cell: (i) => `₹${i.getValue().toLocaleString('en-IN', { maximumFractionDigits: 0 })}`,
-          }),
-        ]
-
-  return [...commonCols.slice(0, 5), ...periodCols, ...commonCols.slice(5)]
-}
-
-// ---------------------------------------------------------------------------
-// Table view component
 // ---------------------------------------------------------------------------
 interface Props {
-  rows: ProcurementRow[]
-  onSelectRow: (row: ProcurementRow) => void
+  rows: IndentRow[]
+  onSelectRow: (row: IndentRow) => void
   selectedSku: string | null
 }
 
-function TableView({
-  data,
-  columns,
-  onSelectRow,
-  selectedSku,
-}: {
-  data: ProcurementRow[]
-  columns: ColumnDef<ProcurementRow, any>[]
-  onSelectRow: (row: ProcurementRow) => void
-  selectedSku: string | null
-}) {
-  const [sorting, setSorting] = useState<SortingState>([{ id: 'urgency', desc: false }])
+export default function ProcurementTable({ rows, onSelectRow, selectedSku }: Props) {
+  const [sorting, setSorting] = useState<SortingState>([{ id: 'indent_qty', desc: true }])
+  const [search, setSearch] = useState('')
+
+  const filteredRows = useMemo(() => {
+    if (!search.trim()) return rows
+    const q = search.trim().toLowerCase()
+    return rows.filter((r) => {
+      const targets = [r.sku_code, r.item, r.category, r.sub_category, r.brand]
+      return targets.some((v) => v && v.toLowerCase().includes(q))
+    })
+  }, [rows, search])
 
   const table = useReactTable({
-    data,
+    data: filteredRows,
     columns,
     columnResizeMode: 'onChange',
     state: { sorting },
@@ -318,267 +207,104 @@ function TableView({
   })
 
   return (
-    <div className="overflow-auto rounded-lg border border-gray-800 max-h-[520px]">
-      <table
-        className="text-sm border-collapse"
-        style={{ width: table.getCenterTotalSize(), tableLayout: 'fixed' }}
-      >
-        <thead className="sticky top-0 z-10">
-          <tr className="bg-gray-900 border-b border-gray-700">
-            {table.getFlatHeaders().map((header) => (
-              <th
-                key={header.id}
-                style={{ width: header.getSize(), position: 'relative' }}
-                className="px-3 py-2.5 text-left text-xs text-gray-400 font-medium overflow-hidden"
-              >
-                {/* Sort trigger */}
-                <span
-                  onClick={header.column.getToggleSortingHandler()}
-                  className="inline-flex items-center gap-1 cursor-pointer select-none hover:text-gray-200 truncate max-w-full"
-                >
-                  <span className="truncate">
-                    {flexRender(header.column.columnDef.header, header.getContext())}
-                  </span>
-                  {header.column.getIsSorted() === 'asc'  && <ChevronUp   className="w-3 h-3 shrink-0" />}
-                  {header.column.getIsSorted() === 'desc' && <ChevronDown className="w-3 h-3 shrink-0" />}
-                </span>
-
-                {/* Resize handle */}
-                <div
-                  onMouseDown={header.getResizeHandler()}
-                  onTouchStart={header.getResizeHandler()}
-                  className={`absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none transition-colors ${
-                    header.column.getIsResizing()
-                      ? 'bg-blue-500'
-                      : 'bg-transparent hover:bg-gray-600'
-                  }`}
-                />
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {table.getRowModel().rows.map((row) => (
-            <tr
-              key={row.id}
-              onClick={() => onSelectRow(row.original)}
-              className={`border-b border-gray-800/60 cursor-pointer transition-colors hover:bg-gray-700/40
-                ${ROW_COLOR[row.original.urgency] ?? ''}
-                ${selectedSku === row.original.sku_code ? 'ring-1 ring-inset ring-blue-500' : ''}`}
-            >
-              {row.getVisibleCells().map((cell) => {
-                const raw = cell.getValue()
-                const titleText = raw !== null && raw !== undefined ? String(raw) : ''
-                return (
-                  <td
-                    key={cell.id}
-                    style={{ width: cell.column.getSize() }}
-                    className="px-3 py-2 text-gray-200 overflow-hidden"
-                    title={titleText}
-                  >
-                    <div className="truncate">
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </div>
-                  </td>
-                )
-              })}
-            </tr>
-          ))}
-          {table.getRowModel().rows.length === 0 && (
-            <tr>
-              <td colSpan={columns.length} className="text-center py-8 text-gray-500">
-                No items match the current filters.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Main export
-// ---------------------------------------------------------------------------
-export default function ProcurementTable({ rows, onSelectRow, selectedSku }: Props) {
-  const [viewMode, setViewMode] = useState<'sidebyside' | 'tabs'>('sidebyside')
-  const [activeMonth, setActiveMonth] = useState<1 | 2 | 3>(1)
-  const [search, setSearch] = useState('')
-  const [salesLoading, setSalesLoading] = useState(false)
-  const [salesStatus, setSalesStatus] = useState<string | null>(null)
-
-  const {
-    uploadedFile,
-    salesData, setSalesData,
-    salesFromDate, salesToDate,
-    setSalesFromDate, setSalesToDate,
-  } = useAppStore()
-
-  const syncSales = async () => {
-    if (!uploadedFile) { setSalesStatus('Upload an Excel file first.'); return }
-    setSalesLoading(true)
-    setSalesStatus(null)
-    try {
-      const res = await fetchSalesData(uploadedFile, salesFromDate, salesToDate)
-      if (res.status === 'error') { setSalesStatus(`Error: ${res.message}`); return }
-      setSalesData(res.matches)
-      setSalesStatus(`Matched ${res.matched} of ${res.total} parts`)
-    } catch (e: any) {
-      setSalesStatus(`Error: ${e.message}`)
-    } finally {
-      setSalesLoading(false)
-    }
-  }
-
-  const MONTH_LABELS: Record<1 | 2 | 3, string> = {
-    1: 'Month 1 — Now',
-    2: 'Month 2 — Day 30',
-    3: 'Month 3 — Day 60',
-  }
-
-  // Filter rows by search query
-  const filteredRows = useMemo(() => {
-    if (!search.trim()) return rows
-    const q = search.trim().toLowerCase()
-    return rows.filter((row) => {
-      // Build the combined vendor string exactly as shown in the table cell
-      const vendorDisplay = row.recommended_vendor_sku
-        ? `${row.recommended_vendor} (${row.recommended_vendor_sku})`
-        : row.recommended_vendor
-      const searchTargets = [
-        row.sku_code,
-        row.description,
-        row.category,
-        row.recommended_vendor,
-        row.recommended_vendor_sku,
-        vendorDisplay,
-        row.urgency,
-        row.flags,
-        String(row.recommended_lead_days),
-        String(row.current_stock),
-        String(row.recommended_order_qty),
-      ]
-      return searchTargets.some((v) => v && v.toLowerCase().includes(q))
-    })
-  }, [rows, search])
-
-  return (
     <div className="flex flex-col gap-3">
-      {/* Sales date range + sync */}
-      <div className="flex items-center gap-2 flex-wrap bg-gray-800/50 rounded-lg px-3 py-2 border border-gray-700">
-        <span className="text-xs text-gray-400 font-medium">Sales History:</span>
-        <input
-          type="date"
-          value={salesFromDate}
-          onChange={(e) => setSalesFromDate(e.target.value)}
-          className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-blue-500"
-        />
-        <span className="text-xs text-gray-500">to</span>
-        <input
-          type="date"
-          value={salesToDate}
-          onChange={(e) => setSalesToDate(e.target.value)}
-          className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-blue-500"
-        />
-        <button
-          onClick={syncSales}
-          disabled={salesLoading}
-          className="flex items-center gap-1.5 px-3 py-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed rounded text-xs text-white font-medium transition-colors"
-        >
-          <RefreshCw className={`w-3 h-3 ${salesLoading ? 'animate-spin' : ''}`} />
-          {salesLoading ? 'Syncing…' : 'Sync Sales'}
-        </button>
-        {salesStatus && (
-          <span className={`text-xs ${salesStatus.startsWith('Error') ? 'text-red-400' : 'text-green-400'}`}>
-            {salesStatus}
-          </span>
-        )}
-        {Object.keys(salesData).length > 0 && !salesStatus && (
-          <span className="text-xs text-gray-500">{Object.keys(salesData).length} parts loaded</span>
-        )}
-      </div>
-
-      {/* Search bar */}
+      {/* Search */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500 pointer-events-none" />
         <input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search parts, descriptions, vendors…"
+          placeholder="Search SKU, item, category, brand…"
           className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 pl-8 pr-8 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
         />
         {search && (
-          <button
-            onClick={() => setSearch('')}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
-          >
+          <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
             <X className="w-3.5 h-3.5" />
           </button>
         )}
       </div>
 
-      {/* View toggle */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs text-gray-400 mr-1">View:</span>
-        {(['sidebyside', 'tabs'] as const).map((mode) => (
-          <button
-            key={mode}
-            onClick={() => setViewMode(mode)}
-            className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-              viewMode === mode
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-800 text-gray-400 hover:text-white'
-            }`}
-          >
-            {mode === 'sidebyside' ? 'Side by Side' : 'By Month'}
-          </button>
-        ))}
-
-        {viewMode === 'tabs' && (
-          <div className="flex items-center gap-1 ml-4 border-l border-gray-700 pl-4">
-            {([1, 2, 3] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => setActiveMonth(m)}
-                className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                  activeMonth === m
-                    ? 'bg-gray-700 text-white'
-                    : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                {MONTH_LABELS[m]}
-              </button>
-            ))}
-          </div>
-        )}
-
-        <span className="ml-auto text-xs text-gray-600">Drag column edges to resize</span>
+      <div className="flex items-center justify-between">
+        {search.trim()
+          ? <p className="text-xs text-gray-500">{filteredRows.length} of {rows.length} SKUs</p>
+          : <span />}
+        <span className="text-xs text-gray-600">Click QOH or FLF to edit · drag column edges to resize</span>
       </div>
 
-      {/* Row count when searching */}
-      {search.trim() && (
-        <p className="text-xs text-gray-500">
-          {filteredRows.length} of {rows.length} parts
-        </p>
-      )}
-
       {/* Table */}
-      {viewMode === 'sidebyside' ? (
-        <TableView
-          data={filteredRows}
-          columns={sideBySideCols}
-          onSelectRow={onSelectRow}
-          selectedSku={selectedSku}
-        />
-      ) : (
-        <TableView
-          data={filteredRows}
-          columns={tabCols(activeMonth)}
-          onSelectRow={onSelectRow}
-          selectedSku={selectedSku}
-        />
-      )}
+      <div className="overflow-auto rounded-lg border border-gray-800 max-h-[560px]">
+        <table
+          className="text-sm border-collapse"
+          style={{ width: table.getCenterTotalSize(), tableLayout: 'fixed' }}
+        >
+          <thead className="sticky top-0 z-10">
+            <tr className="bg-gray-900 border-b border-gray-700">
+              {table.getFlatHeaders().map((header) => (
+                <th
+                  key={header.id}
+                  style={{ width: header.getSize(), position: 'relative' }}
+                  className="px-3 py-2.5 text-left text-xs text-gray-400 font-medium overflow-hidden"
+                >
+                  <span
+                    onClick={header.column.getToggleSortingHandler()}
+                    className="inline-flex items-center gap-1 cursor-pointer select-none hover:text-gray-200 truncate max-w-full"
+                  >
+                    <span className="truncate">
+                      {flexRender(header.column.columnDef.header, header.getContext())}
+                    </span>
+                    {header.column.getIsSorted() === 'asc'  && <ChevronUp   className="w-3 h-3 shrink-0" />}
+                    {header.column.getIsSorted() === 'desc' && <ChevronDown className="w-3 h-3 shrink-0" />}
+                  </span>
+                  <div
+                    onMouseDown={header.getResizeHandler()}
+                    onTouchStart={header.getResizeHandler()}
+                    className={`absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none transition-colors ${
+                      header.column.getIsResizing() ? 'bg-blue-500' : 'bg-transparent hover:bg-gray-600'
+                    }`}
+                  />
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {table.getRowModel().rows.map((row) => (
+              <tr
+                key={row.id}
+                onClick={() => onSelectRow(row.original)}
+                className={`border-b border-gray-800/60 cursor-pointer transition-colors hover:bg-gray-700/40
+                  ${row.original.indent_qty > 0 ? 'bg-amber-950/20' : ''}
+                  ${!row.original.matched ? 'opacity-70' : ''}
+                  ${selectedSku === row.original.sku_code ? 'ring-1 ring-inset ring-blue-500' : ''}`}
+              >
+                {row.getVisibleCells().map((cell) => {
+                  const raw = cell.getValue()
+                  const titleText = raw !== null && raw !== undefined ? String(raw) : ''
+                  return (
+                    <td
+                      key={cell.id}
+                      style={{ width: cell.column.getSize() }}
+                      className="px-3 py-2 text-gray-200 overflow-hidden"
+                      title={titleText}
+                    >
+                      <div className="truncate">
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </div>
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+            {table.getRowModel().rows.length === 0 && (
+              <tr>
+                <td colSpan={columns.length} className="text-center py-8 text-gray-500">
+                  No SKUs match the current filters.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
