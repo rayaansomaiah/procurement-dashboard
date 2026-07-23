@@ -93,7 +93,7 @@ def _sorted_unique(results, key):
 
 
 @app.post("/api/analyze", response_model=AnalyzeResponse)
-async def analyze(
+def analyze(
     file: UploadFile = File(...),
     machine_count: float = Form(500.0),
     monthly_usage_hrs: float = Form(130.0),
@@ -103,7 +103,7 @@ async def analyze(
     qoh_overrides: str = Form("{}"),
     flf_overrides: str = Form("{}"),
 ):
-    contents = await file.read()
+    contents = file.file.read()
     if not sales_from or not sales_to:
         sales_from, sales_to = _default_range()
 
@@ -135,7 +135,7 @@ async def analyze(
 
 
 @app.post("/api/export")
-async def export(
+def export(
     file: UploadFile = File(...),
     machine_count: float = Form(500.0),
     monthly_usage_hrs: float = Form(130.0),
@@ -149,7 +149,7 @@ async def export(
     filter_brand: str = Form("[]"),
     needs_indent_only: bool = Form(False),
 ):
-    contents = await file.read()
+    contents = file.file.read()
     if not sales_from or not sales_to:
         sales_from, sales_to = _default_range()
 
@@ -181,13 +181,34 @@ async def export(
 
 
 @app.get("/api/zoho/stock")
-async def zoho_stock():
+def zoho_stock():
     """Debug: fetch current stock levels from Zoho Books (READ ONLY)."""
     try:
         stock_map = get_zoho_stock()
         return {"status": "ok", "count": len(stock_map), "stock": stock_map}
     except Exception as e:
         return {"status": "error", "message": str(e), "stock": {}}
+
+
+@app.get("/api/health")
+def health():
+    """Lightweight liveness check that never touches Zoho (used to keep warm)."""
+    return {"status": "ok"}
+
+
+@app.on_event("startup")
+def _prewarm_zoho():
+    """Kick off the QOH fetch in the background so the cache is warm before
+    the first user request (mitigates cold-start latency on Render)."""
+    import threading
+
+    def _warm():
+        try:
+            get_zoho_stock()
+        except Exception:
+            pass
+
+    threading.Thread(target=_warm, daemon=True).start()
 
 
 # Serve built React app only in production

@@ -18,14 +18,14 @@ function buildForm(
   return form
 }
 
-async function postWithTimeout(url: string, body: FormData, timeoutMs = 120000): Promise<Response> {
+async function postWithTimeout(url: string, body: FormData, timeoutMs = 180000): Promise<Response> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
     return await fetch(url, { method: 'POST', body, signal: controller.signal })
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') {
-      throw new Error('Request timed out — is the backend server running?')
+      throw new Error('Request timed out after 3 min — the free-tier server may be cold-starting; try again.')
     }
     throw new Error('Could not reach the backend server.')
   } finally {
