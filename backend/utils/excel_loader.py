@@ -102,7 +102,12 @@ def load_indent_excel(file) -> tuple[list[dict], list[str]]:
         file = io.BytesIO(file)
 
     try:
-        wb = openpyxl.load_workbook(file, data_only=False, read_only=True)
+        # NOTE: read_only=False is intentional. We do random cell access
+        # (ws.cell(row, col)) throughout; openpyxl's read-only mode re-seeks
+        # from the start on each random access, which is catastrophically slow
+        # on a BytesIO stream (the real upload path). Normal mode loads the
+        # sheet into memory — fast random access, fine for a few hundred rows.
+        wb = openpyxl.load_workbook(file, data_only=False, read_only=False)
     except Exception as e:
         raise ValueError(f"Could not read Excel file: {e}")
 
