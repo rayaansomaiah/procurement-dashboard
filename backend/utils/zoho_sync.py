@@ -28,6 +28,9 @@ _CACHE_TTL_SECONDS = 600
 _cache_stock_map: dict[str, float] | None = None
 _cache_timestamp: float = 0.0
 
+# Sales cache keyed by (from_date, to_date) -> (sales_map, timestamp)
+_cache_sales: dict[tuple[str, str], tuple[dict, float]] = {}
+
 ZOHO_TOKEN_URL  = "https://accounts.zoho.in/oauth/v2/token"
 ZOHO_BOOKS_BASE = "https://www.zohoapis.in/books/v3"
 
@@ -50,9 +53,32 @@ def _get_access_token(client_id: str, client_secret: str, refresh_token: str) ->
     return data["access_token"]
 
 
+_PAGE_WAVE = 6  # inventory pages fetched concurrently per wave
+
+
+def _fetch_inv_page(access_token: str, org_id: str, page: int) -> tuple[list[dict], bool]:
+    """Fetch one inventory-summary page → (item_details, has_more_page)."""
+    resp = httpx.get(
+        f"{ZOHO_BOOKS_BASE}/reports/inventorysummary",
+        headers={"Authorization": f"Zoho-oauthtoken {access_token}"},
+        params={"organization_id": org_id, "page": page, "per_page": 200},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    if data.get("code", 0) != 0:
+        raise ValueError(f"Zoho inventory report error: {data.get('message')}")
+    rows: list[dict] = []
+    for group in data.get("inventory", []):
+        rows.extend(group.get("item_details", []))
+    has_more = bool(data.get("page_context", {}).get("has_more_page", False))
+    return rows, has_more
+
+
 def _fetch_inventory_summary(access_token: str, org_id: str) -> list[dict]:
     """
-    Fetch stock via the Inventory Summary report (handles pagination).
+    Fetch stock via the Inventory Summary report, paginating in concurrent
+    waves (~6 pages at a time) so the ~3,500-item fleet loads in seconds.
 
     NOTE: We use reports/inventorysummary instead of the /items endpoint
     because the API user is provisioned for Zoho Books reports/sales but not
@@ -60,31 +86,26 @@ def _fetch_inventory_summary(access_token: str, org_id: str) -> list[dict]:
     account, while reports work fine). The report's `quantity_available` field
     is the live on-hand stock and is independent of the report's date filter.
     """
-    headers = {"Authorization": f"Zoho-oauthtoken {access_token}"}
-    rows    = []
-    page    = 1
+    from concurrent.futures import ThreadPoolExecutor
 
-    while True:
-        resp = httpx.get(
-            f"{ZOHO_BOOKS_BASE}/reports/inventorysummary",
-            headers=headers,
-            params={
-                "organization_id": org_id,
-                "page":            page,
-                "per_page":        200,
-            },
-            timeout=30,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+    rows: list[dict] = []
+    first_rows, has_more = _fetch_inv_page(access_token, org_id, 1)
+    rows.extend(first_rows)
 
-        # Response shape: {"inventory": [{"item_details": [ {...}, ... ]}], ...}
-        for group in data.get("inventory", []):
-            rows.extend(group.get("item_details", []))
-
-        if not data.get("page_context", {}).get("has_more_page", False):
-            break
-        page += 1
+    next_page = 2
+    with ThreadPoolExecutor(max_workers=_PAGE_WAVE) as pool:
+        while has_more:
+            batch = list(range(next_page, next_page + _PAGE_WAVE))
+            results = list(pool.map(
+                lambda p: _fetch_inv_page(access_token, org_id, p), batch
+            ))
+            for page_rows, _ in results:
+                rows.extend(page_rows)
+            # Continue only if the last page in the wave still had more (and
+            # returned data). Overshot pages return empty + has_more=False.
+            last_rows, last_more = results[-1]
+            has_more = last_more and bool(last_rows)
+            next_page += _PAGE_WAVE
 
     return rows
 
@@ -128,9 +149,15 @@ def get_zoho_stock() -> dict[str, float]:
 
 def get_sales_by_item(from_date: str, to_date: str) -> dict[str, dict]:
     """
-    Fetch Sales by Item report from Zoho Books for a date range.
+    Fetch Sales by Item report from Zoho Books for a date range (paginated).
     Returns {sku_upper: {qty_sold, avg_price, total_amount}}.
+    Cached per date range for CACHE_TTL_SECONDS.
     """
+    key = (from_date, to_date)
+    cached = _cache_sales.get(key)
+    if cached and (time.time() - cached[1]) < _CACHE_TTL_SECONDS:
+        return cached[0]
+
     client_id     = os.getenv("ZOHO_CLIENT_ID",     "")
     client_secret = os.getenv("ZOHO_CLIENT_SECRET", "")
     refresh_token = os.getenv("ZOHO_REFRESH_TOKEN", "")
@@ -144,33 +171,41 @@ def get_sales_by_item(from_date: str, to_date: str) -> dict[str, dict]:
     access_token = _get_access_token(client_id, client_secret, refresh_token)
     headers = {"Authorization": f"Zoho-oauthtoken {access_token}"}
 
-    resp = httpx.get(
-        f"{ZOHO_BOOKS_BASE}/reports/salesbyitem",
-        headers=headers,
-        params={
-            "organization_id": org_id,
-            "from_date":       from_date,
-            "to_date":         to_date,
-        },
-        timeout=30,
-    )
-    resp.raise_for_status()
-    data = resp.json()
-
-    if data.get("code", 0) != 0:
-        raise ValueError(f"Zoho sales report error: {data.get('message')}")
-
     sales_map: dict[str, dict] = {}
-    for item in data.get("sales", []):
-        sku = str((item.get("item") or {}).get("sku") or "").strip().upper()
-        if not sku:
-            continue
-        sales_map[sku] = {
-            "qty_sold":     float(item.get("quantity_sold") or 0),
-            "avg_price":    float(item.get("average_price") or 0),
-            "total_amount": float(item.get("amount") or 0),
-        }
+    page = 1
+    while True:
+        resp = httpx.get(
+            f"{ZOHO_BOOKS_BASE}/reports/salesbyitem",
+            headers=headers,
+            params={
+                "organization_id": org_id,
+                "from_date":       from_date,
+                "to_date":         to_date,
+                "page":            page,
+                "per_page":        200,
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("code", 0) != 0:
+            raise ValueError(f"Zoho sales report error: {data.get('message')}")
 
+        for item in data.get("sales", []):
+            sku = str((item.get("item") or {}).get("sku") or "").strip().upper()
+            if not sku:
+                continue
+            sales_map[sku] = {
+                "qty_sold":     float(item.get("quantity_sold") or 0),
+                "avg_price":    float(item.get("average_price") or 0),
+                "total_amount": float(item.get("amount") or 0),
+            }
+
+        if not data.get("page_context", {}).get("has_more_page", False):
+            break
+        page += 1
+
+    _cache_sales[key] = (sales_map, time.time())
     return sales_map
 
 

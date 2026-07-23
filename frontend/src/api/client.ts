@@ -18,16 +18,28 @@ function buildForm(
   return form
 }
 
+async function postWithTimeout(url: string, body: FormData, timeoutMs = 120000): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { method: 'POST', body, signal: controller.signal })
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      throw new Error('Request timed out — is the backend server running?')
+    }
+    throw new Error('Could not reach the backend server.')
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export async function runAnalysis(
   file: File,
   params: AnalysisParams,
   qohOverrides: Record<string, number> = {},
   flfOverrides: Record<string, number> = {},
 ): Promise<AnalyzeResponse> {
-  const res = await fetch('/api/analyze', {
-    method: 'POST',
-    body: buildForm(file, params, qohOverrides, flfOverrides),
-  })
+  const res = await postWithTimeout('/api/analyze', buildForm(file, params, qohOverrides, flfOverrides))
   if (!res.ok) {
     const text = await res.text()
     throw new Error(text || `Server error ${res.status}`)
